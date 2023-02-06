@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 import threading
@@ -27,6 +28,18 @@ from utils.click_handlers import bands_handler, zooms_handler
 warnings.filterwarnings("ignore")
 os.environ['CPL_LOG'] = '/dev/null'
 
+META_DICT = {
+  "meta": {
+    "common": [
+      { "rstep": 0, "rmin": 0 },
+      { "gstep": 0, "gmin": 0 },
+      { "bstep": 0, "bmin": 0 },
+      { "astep": 0, "amin": 0 }
+    ]
+  }
+}
+
+
 
 def render_tile(input_file,
                 output_path,
@@ -38,30 +51,23 @@ def render_tile(input_file,
                 img_format):
     with threading.Lock():
         try:
-            metainfo_array = numpy.zeros(shape=(8, tilesize),
-                                         dtype='uint8')
             if in_range:
                 with Reader(input=input_file, tms=tms) as input_file_rio:
-                    output_tile = input_file_rio.tile(tile_z=tile.z,
+                    output_tile_bytes = input_file_rio.tile(tile_z=tile.z,
                                                       tile_y=tile.y,
                                                       tile_x=tile.x,
                                                       tilesize=tilesize,
                                                       nodata=nodata,
                                                       indexes=1).post_process(
                         in_range=in_range,
-                        out_dtype='uint8')
-                    output_tile_bytes = render(data=numpy.concatenate((metainfo_array, output_tile.data[0]),
-                                                                      dtype='uint8',
-                                                                      axis=0),
-                                               nodata=nodata,
-                                               img_format=img_format)
+                        out_dtype='uint8').render(nodata=nodata, img_format=img_format)
             else:
                 output_tile_bytes = render(data=numpy.zeros(shape=(tilesize, tilesize),
                                                             dtype='uint8'),
                                            nodata=nodata,
                                            img_format=img_format)
         except TileOutsideBounds:
-            output_tile_bytes = render(data=numpy.zeros(shape=(tilesize + 8, tilesize),
+            output_tile_bytes = render(data=numpy.zeros(shape=(tilesize, tilesize),
                                                         dtype='uint8'),
                                        nodata=nodata,
                                        img_format=img_format)
@@ -115,15 +121,22 @@ def process_raster(src_ds=None,
         multi=multi,
         cutline_fn=cutline_fn,
         cutline_layer=cutline_layer,
-        output_format='GTiff',  # Guarantees that no affine wraps will be applied
+        output_format='GTiff',
         src_nodata=src_nodata,
         dst_nodata=dst_nodata,
         write_flush=write_flush
     )
+    meta_path = os.path.join(tile_folder, str(bands[0]))
+    os.makedirs(meta_path, exist_ok=True)
     with rasterio.open(warped_ds_fn) as wds_rio:
         try:
             stats = wds_rio.statistics(bidx=1, approx=True, clear_cache=True)
             in_range = ((stats.min, stats.max),)
+            meta_dict = META_DICT
+            meta_dict['meta']['common'][0]['rstep'] = (stats.max - stats.min) / 255
+            meta_dict['meta']['common'][0]['rmin'] = stats.min
+            with open(os.path.join(meta_path, 'meta.json'), 'w') as meta_file:
+                json.dump(meta_dict, meta_file)
         except rasterio._err.CPLE_AppDefinedError:
             in_range = None
 
