@@ -64,6 +64,15 @@ memory_opt = click.option(
     '''
 )
 
+zero_mask_flag = click.option(
+    '--zero',
+    'zero_mask',
+    is_flag=True,
+    help='''
+    Заполнить пустой канал выходного тайла нулями.
+    '''
+)
+
 render_bounds_opt = click.option(
     '--render-bounds',
     'render_bounds',

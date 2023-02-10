@@ -7,6 +7,7 @@ import click
 import fiona
 import mercantile
 import morecantile
+import numpy
 import rasterio
 import rasterio.mask
 from pyproj import CRS
@@ -21,6 +22,7 @@ from grib_tiler.utils.step_namedtuples import TranslateTask, WarpTask, InRangeTa
 
 warnings.filterwarnings("ignore")
 os.environ['CPL_LOG'] = '/dev/null'
+os.environ['GRIB_ADJUST_LONGITUDE_RANGE'] = 'NO'
 
 
 def buildvrt_wrapper(vrtask):
@@ -40,6 +42,7 @@ def buildvrt_wrapper(vrtask):
 @click_options.threads_opt
 @click_options.zooms_opt
 @click_options.nodata_opt
+@click_options.zero_mask_flag
 def grib_tiler(inputs,
                output,
                bands,
@@ -51,12 +54,14 @@ def grib_tiler(inputs,
                threads,
                zooms,
                nodata,
-               uv):
+               uv,
+               zero_mask):
     tms = morecantile.TileMatrixSet.custom(extent=CRS.from_user_input(output_crs).area_of_use.bounds,
                                            extent_crs=CRS.from_epsg(4326),
                                            crs=CRS.from_user_input(output_crs))
     os.makedirs(output, exist_ok=True)
     temp_dir = tempfile.TemporaryDirectory()
+    temp_dir_name = temp_dir.name
 
     zooms = zooms_handler(zooms)
 
@@ -66,37 +71,43 @@ def grib_tiler(inputs,
             render_bounds = input.bounds
             tiles_list = list(mercantile.tiles(*render_bounds, zooms))
     else:
-        with fiona.open(cutline) as cutline_lyr:
-            render_bounds = cutline_lyr.bounds
+        with rasterio.open(inputs[0]) as input:
+            render_bounds = input.bounds
             tiles_list = list(mercantile.tiles(*render_bounds, zooms))
 
     if uv:
-        uv_in_ranges, uv_pairs_translated = uv_handler(cutline, cutline_layer, inputs, output_crs, temp_dir, threads)
+        uv_in_ranges, uv_pairs_translated = uv_handler(cutline, cutline_layer, inputs, output_crs, temp_dir_name, threads)
         metainfo_writer(output, uv_in_ranges, uv_pairs_translated)
         render_tile_task = []
+        if zero_mask:
+            zero_mask = numpy.zeros((tilesize, tilesize), dtype="uint8")
         for tile in tiles_list:
             for filename, in_range in zip(uv_pairs_translated, uv_in_ranges):
                 render_tile_task.append(
                     RenderTileTask(input_fn=filename, z=tile.z, x=tile.x, y=tile.y, tms=tms, nodata=nodata,
                                    in_range=in_range, tilesize=tilesize,
                                    img_format=img_format, band_name=os.path.splitext(os.path.basename(filename))[0],
-                                   output_dir=output)
+                                   output_dir=output, zero_mask=zero_mask)
                 )
         process_map(render_tile, render_tile_task, max_workers=threads, desc='Рендеринг тайлов')
     else:
         inputs = inputs[0]
-        in_ranges, translated = band_handler(cutline, cutline_layer, inputs, output_crs, temp_dir, threads, bands)
+        in_ranges, translated = band_handler(cutline, cutline_layer, inputs, output_crs, temp_dir_name, threads, bands)
         metainfo_writer(output, in_ranges, translated)
         render_tile_task = []
+        if zero_mask:
+            zero_mask = numpy.zeros((tilesize, tilesize), dtype="uint8")
         for tile in tiles_list:
             for filename, in_range in zip(translated, in_ranges):
                 render_tile_task.append(
                     RenderTileTask(input_fn=filename, z=tile.z, x=tile.x, y=tile.y, tms=tms, nodata=nodata,
                                    in_range=in_range, tilesize=tilesize,
                                    img_format=img_format, band_name=os.path.splitext(os.path.basename(filename))[0],
-                                   output_dir=output)
+                                   output_dir=output,
+                                   zero_mask=zero_mask)
                 )
         process_map(render_tile, render_tile_task, max_workers=threads, desc='Рендеринг тайлов')
+    temp_dir.cleanup()
 
 
 
@@ -121,7 +132,7 @@ def band_handler(cutline, cutline_layer, input, output_crs, temp_dir, threads, b
         with rasterio.open(input) as input:
             bands = input.indexes
     extracted_bands = process_map(extract_band,
-                                  [TranslateTask(input_fn=input, output_dir=temp_dir.name,
+                                  [TranslateTask(input_fn=input, output_dir=temp_dir,
                                                  band=band, output_format='GRIB', output_format_extension='.grib2')
                                    for band in bands],
                                   max_workers=threads,
@@ -131,7 +142,7 @@ def band_handler(cutline, cutline_layer, input, output_crs, temp_dir, threads, b
                             max_workers=threads,
                             desc='Вычисление мин/макс выбранных каналов')
     warped_bands = process_map(warp_band,
-                               [WarpTask(input_fn=u_fn, output_dir=temp_dir.name,
+                               [WarpTask(input_fn=u_fn, output_dir=temp_dir,
                                          output_crs=output_crs, multithreaded=True,
                                          cutline_fn=cutline,
                                          cutline_layername=cutline_layer, output_format='GTiff',
@@ -161,13 +172,13 @@ def uv_handler(cutline, cutline_layer, inputs, output_crs, temp_dir, threads):
             raise click.Abort()
 
         u_extracts = process_map(extract_band,
-                                 [TranslateTask(input_fn=inputs, output_dir=temp_dir.name, band=band,
+                                 [TranslateTask(input_fn=inputs, output_dir=temp_dir, band=band,
                                                 output_format='GRIB',
                                                 output_format_extension='.grib2') for band in u_list],
                                  max_workers=threads,
                                  desc='Извлечение U-компоненты ветра')
         v_extracts = process_map(extract_band,
-                                 [TranslateTask(input_fn=inputs, output_dir=temp_dir.name, band=band,
+                                 [TranslateTask(input_fn=inputs, output_dir=temp_dir, band=band,
                                                 output_format='GRIB',
                                                 output_format_extension='.grib2') for band in v_list],
                                  max_workers=threads,
@@ -183,7 +194,7 @@ def uv_handler(cutline, cutline_layer, inputs, output_crs, temp_dir, threads):
     uv_inranges = list(zip(u_inranges, v_inranges))
     grib_shortnames = [grep_meta(u_fn, 'GRIB_SHORT_NAME') for u_fn in u_extracts]
     warp_u_filenames = process_map(warp_band,
-                                   [WarpTask(input_fn=u_fn, output_dir=temp_dir.name,
+                                   [WarpTask(input_fn=u_fn, output_dir=temp_dir,
                                              output_crs=output_crs, multithreaded=True,
                                              cutline_fn=cutline,
                                              cutline_layername=cutline_layer, output_format='GTiff',
@@ -192,7 +203,7 @@ def uv_handler(cutline, cutline_layer, inputs, output_crs, temp_dir, threads):
                                    max_workers=threads,
                                    desc='Перепроецирование U-компонент ветра')
     warp_v_filenames = process_map(warp_band,
-                                   [WarpTask(input_fn=v_fn, output_dir=temp_dir.name,
+                                   [WarpTask(input_fn=v_fn, output_dir=temp_dir,
                                              output_crs=output_crs, multithreaded=True,
                                              cutline_fn=cutline,
                                              cutline_layername=cutline_layer, output_format='GTiff',
@@ -202,13 +213,13 @@ def uv_handler(cutline, cutline_layer, inputs, output_crs, temp_dir, threads):
                                    desc='Перепроецирование V-компонент ветра')
     uv_pair_vrt_filenames = process_map(buildvrt_wrapper,
                                         [VRTask(list(uv_fns),
-                                                os.path.join(temp_dir.name, f'{grib_shortname[0]}.vrt'))
+                                                os.path.join(temp_dir, f'{grib_shortname[0]}.vrt'))
                                          for uv_fns, grib_shortname in
                                          zip(list(zip(warp_u_filenames, warp_v_filenames)), grib_shortnames)],
                                         max_workers=threads,
                                         desc='Объединение U- и V-компонент ветра')
     uv_pairs_translated = process_map(extract_band,
-                                      [TranslateTask(uv_pair_vrt_filename, temp_dir.name, None, 'GTiff',
+                                      [TranslateTask(uv_pair_vrt_filename, temp_dir, None, 'GTiff',
                                                      '.tiff') for
                                        uv_pair_vrt_filename in uv_pair_vrt_filenames], max_workers=threads,
                                       desc='Рендеринг U- и V- компонент')

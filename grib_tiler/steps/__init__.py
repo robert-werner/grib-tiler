@@ -105,22 +105,19 @@ def render_tile(render_task):
         if len(indexes) == 1:
             indexes = indexes[0]
             in_range = [render_task.in_range,]
-        if render_task.in_range:
-
-            try:
-                tile_bytes = input_file_rio.tile(tile_z=render_task.z,
-                                                 tile_y=render_task.y,
-                                                 tile_x=render_task.x,
-                                                 tilesize=render_task.tilesize,
-                                                 nodata=render_task.nodata,
-                                                 indexes=indexes).post_process(
-                    in_range=in_range,
-                    out_dtype='uint8').render(img_format=render_task.img_format)
-            except TileOutsideBounds:
-                tile_bytes = render(data=numpy.zeros(
-                    shape=(len(input_file_rio.dataset.indexes), render_task.tilesize, render_task.tilesize),
-                    dtype='uint8'), img_format=render_task.img_format)
-        else:
+        try:
+            tile = input_file_rio.tile(tile_z=render_task.z,
+                                             tile_y=render_task.y,
+                                             tile_x=render_task.x,
+                                             tilesize=render_task.tilesize,
+                                             nodata=render_task.nodata,
+                                             indexes=indexes).post_process(
+                in_range=in_range,
+                out_dtype='uint8')
+            if isinstance(render_task.zero_mask, numpy.ndarray):
+                tile.mask = render_task.zero_mask
+            tile_bytes = tile.render(img_format=render_task.img_format)
+        except TileOutsideBounds:
             tile_bytes = render(data=numpy.zeros(
                 shape=(len(input_file_rio.dataset.indexes), render_task.tilesize, render_task.tilesize),
                 dtype='uint8'), img_format=render_task.img_format)
@@ -152,8 +149,8 @@ def seek_by_meta_value(input_fn, **meta_term):
 def write_metainfo(meta_info_task):
     meta_info = META_INFO
     in_range = meta_info_task.in_range
-    if isinstance(meta_info_task.in_range, tuple):
-        in_range = [meta_info_task.in_range]
+    if isinstance(in_range[0], float):
+        in_range = [in_range]
     for idx, band, in_range in zip(range(0, len(meta_info_task.in_range) + 1),
                                    ['r', 'g', 'b', 'a'][0:len(meta_info_task.in_range)], in_range):
         meta_info['meta']['common'][idx][f'{band}step'] = (in_range[1] - in_range[0]) / 255

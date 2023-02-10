@@ -4,7 +4,7 @@ from typing import Optional
 
 RenderTileTask = namedtuple('RenderTileTask',
                             ['input_fn', 'z', 'x', 'y', 'tms', 'nodata', 'in_range', 'tilesize', 'img_format',
-                             'output_dir', 'band_name'])
+                             'output_dir', 'band_name', 'zero_mask'])
 SaveTileTask = namedtuple('SaveTask', ['rendered_tile', 'output_dir'])
 RenderedTile = namedtuple('RenderedTile', ['tile', 'bands', 'z', 'x', 'y'])
 TranslateTask = namedtuple('TranslateTask',
