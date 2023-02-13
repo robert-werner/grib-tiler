@@ -34,7 +34,9 @@ def extract_band(translate_task):
         output_format_extension = os.path.splitext(os.path.basename(translate_task.input_fn))[1]
     else:
         output_format_extension = translate_task.output_format_extension
-    output_fn = os.path.join(translate_task.output_dir, f'{input_filename}{band_postfix}{output_format_extension}')
+    output_fn = translate_task.output_fn
+    if not translate_task.output_fn:
+        output_fn = os.path.join(translate_task.output_dir, f'{input_filename}{band_postfix}{output_format_extension}')
     translate(
         src_ds=translate_task.input_fn,
         dst_ds=output_fn,
@@ -47,10 +49,10 @@ def extract_band(translate_task):
 def warp_band(warp_task):
     input_filename = os.path.splitext(os.path.basename(warp_task.input_fn))[0]
     input_file_extension = os.path.splitext(os.path.basename(warp_task.input_fn))[1]
-    output_fn = os.path.join(warp_task.output_dir, f'{input_filename}_warped{input_file_extension}')
+    warped_fn = os.path.join(warp_task.output_dir, f'{input_filename}_warped{input_file_extension}')
     warp(
         src_ds=warp_task.input_fn,
-        dst_ds=output_fn,
+        dst_ds=warped_fn,
         output_crs=warp_task.output_crs,
         multi=warp_task.multithreaded,
         cutline_fn=warp_task.cutline_fn,
@@ -58,9 +60,11 @@ def warp_band(warp_task):
         output_format=warp_task.output_format,
         src_nodata=warp_task.src_nodata,
         dst_nodata=warp_task.dst_nodata,
-        write_flush=warp_task.write_flush
+        write_flush=warp_task.write_flush,
+        target_extent=warp_task.target_extent,
+        target_extent_crs=warp_task.target_extent_crs
     )
-    return output_fn
+    return warped_fn
 
 
 def get_in_ranges(inrange_task):
@@ -104,14 +108,14 @@ def render_tile(render_task):
         in_range = render_task.in_range
         if len(indexes) == 1:
             indexes = indexes[0]
-            in_range = [render_task.in_range,]
+            in_range = [render_task.in_range, ]
         try:
             tile = input_file_rio.tile(tile_z=render_task.z,
-                                             tile_y=render_task.y,
-                                             tile_x=render_task.x,
-                                             tilesize=render_task.tilesize,
-                                             nodata=render_task.nodata,
-                                             indexes=indexes).post_process(
+                                       tile_y=render_task.y,
+                                       tile_x=render_task.x,
+                                       tilesize=render_task.tilesize,
+                                       nodata=render_task.nodata,
+                                       indexes=indexes).post_process(
                 in_range=in_range,
                 out_dtype='uint8')
             if isinstance(render_task.zero_mask, numpy.ndarray):
@@ -127,23 +131,6 @@ def render_tile(render_task):
                            f'{render_task.z}/{render_task.x}/{render_task.y}{get_tile_extension(render_task.img_format)}'),
               'wb') as tile_file:
         tile_file.write(tile_bytes)
-
-
-def seek_by_meta_value(input_fn, **meta_term):
-    results = {}
-    with rasterio.open(input_fn) as input_rio:
-        for bidx in input_rio.indexes:
-            tags = input_rio.tags(bidx)
-            for k, v in meta_term.items():
-                if k in tags:
-                    for _v in v:
-                        if tags[k] == _v:
-                            if _v in results:
-                                results[_v].append(bidx)
-                            else:
-                                results[_v] = []
-                                results[_v].append(bidx)
-    return results
 
 
 def write_metainfo(meta_info_task):
@@ -166,4 +153,5 @@ def grep_meta(input_fn, meta_key):
             tags = input_rio.tags(bidx)
             if meta_key in tags:
                 results.append(tags[meta_key])
-    return results
+    results = list(set(results))
+    return results[0]

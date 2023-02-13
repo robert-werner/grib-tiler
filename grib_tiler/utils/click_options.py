@@ -19,7 +19,7 @@ is_flag=True,
 )
 
 cutline_opt = click.option(
-    '-cutline',
+    '--cutline',
     'cutline',
     default=None,
     help='Путь к файлу обрезки растра'
@@ -92,7 +92,7 @@ tile_dimension_opt = click.option(
 
 out_crs_opt = click.option('--out-crs',
                            'output_crs',
-                           default='EPSG:4326',
+                           default=None,
                            callback=crs_handler,
                            help="Выходная система координат тайлов.")
 
@@ -145,3 +145,8 @@ isolines_generate_opt = click.option(
     default=None,
     help='Генерировать изолинии'
 )
+
+coeff_opt = click.option('--coeff',
+                         'coeff',
+                         default=1,
+                         help='Применить коэффицент уменьшения к пределам матричной сетки TMS')
