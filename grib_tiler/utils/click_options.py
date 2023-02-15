@@ -15,7 +15,7 @@ wind_opt = click.option(
     'wind',
     is_flag=True,
     default=False,
-    help='Генерировать UV-тайлы (можно подавать на вход пару U- и V- файлов)'
+    help='Генерировать тайлы ветра'
 )
 
 cutline_opt = click.option(
