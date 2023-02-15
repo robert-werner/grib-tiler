@@ -57,7 +57,6 @@ class RenderTileTask(Task):
                  nodata=None,
                  tilesize=256,
                  dtype='uint8',
-                 in_range=None,
                  image_format='PNG',
                  subdirectory_name=None,
                  nodata_mask_array=None):
@@ -69,7 +68,6 @@ class RenderTileTask(Task):
         self.nodata = nodata
         self.tilesize = tilesize
         self.dtype = dtype
-        self.in_range = in_range
         self.image_format = image_format
         self.subdirectory_name = subdirectory_name
         if self.subdirectory_name:
@@ -90,7 +88,7 @@ class RenderTileTask(Task):
 
     @property
     def nodata_mask(self):
-        if self._nodata_mask:
+        if isinstance(self._nodata_mask, np.ndarray):
             return self._nodata_mask
 
     @property
@@ -99,7 +97,6 @@ class RenderTileTask(Task):
             indexes = list(range(1, len(input_rio_ds.indexes) + 1))
             if len(indexes) == 1:
                 indexes = indexes[0]
-                self.in_range = (self.in_range,)
         return indexes
 
 
@@ -113,11 +110,15 @@ class TranslateTask(Task):
 
     def __init__(self, input_filename, output_filename, output_directory=None,
                  bands=None,
-                 output_format=None):
+                 output_format=None,
+                 scale=None,
+                 output_dtype='Byte'):
         super().__init__(input_filename=input_filename,
                          output_filename=output_filename,
                          output_directory=output_directory)
         self.bands = bands
         self.output_format = output_format
+        self.scale = scale
+        self.output_dtype = output_dtype
 
 

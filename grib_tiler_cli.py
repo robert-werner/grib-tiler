@@ -88,21 +88,23 @@ def warp_input(input_subsets, cutline_filename, cutline_layer, output_crs, threa
     return warp_subsets
 
 
-def prepare_for_tiling(warped_subsets, threads):
+def prepare_for_tiling(warped_subsets, in_ranges, threads):
     rasters_for_tiling_tasks = []
     if warped_subsets:
-        for warped_subset in warped_subsets:
+        for warped_subset, in_range in zip(warped_subsets, in_ranges):
             output_filename = warped_subset.replace('vrt', 'tiff').replace('_warped', '')
             rasters_for_tiling_task = TranslateTask(input_filename=warped_subset,
                                                     output_filename=output_filename,
-                                                    output_format='GTiff')
+                                                    output_format='GTiff',
+                                                    scale=in_range)
             rasters_for_tiling_tasks.append(rasters_for_tiling_task)
     else:
-        for warped_subset in warped_subsets:
+        for warped_subset, in_range in zip(warped_subsets, in_ranges):
             output_filename = warped_subset.replace('vrt', 'tiff').replace('_warped', '')
             rasters_for_tiling_task = TranslateTask(input_filename=warped_subset,
                                                     output_filename=output_filename,
-                                                    output_format='GTiff')
+                                                    output_format='GTiff',
+                                                    scale=in_range)
             rasters_for_tiling_tasks.append(rasters_for_tiling_task)
     rasters_for_tiling = process_map(translate_raster,
                                      rasters_for_tiling_tasks,
@@ -123,7 +125,7 @@ def prepare_in_ranges(rasters_for_tiling, threads):
     return in_ranges
 
 
-def prepare_tiling_tasks(rasters_for_tiling, in_ranges,
+def prepare_tiling_tasks(rasters_for_tiling,
                          tiles, output,
                          tms, tilesize,
                          image_format, generate_nodata_mask=True):
@@ -131,7 +133,7 @@ def prepare_tiling_tasks(rasters_for_tiling, in_ranges,
     nodata_mask = None
     if generate_nodata_mask:
         nodata_mask = np.zeros((tilesize, tilesize), dtype='uint8')
-    for raster_for_tiling, in_range in zip(rasters_for_tiling, in_ranges):
+    for raster_for_tiling in rasters_for_tiling:
         for tile in tiles:
             tiling_task = RenderTileTask(input_filename=raster_for_tiling,
                                          output_directory=output,
@@ -140,7 +142,6 @@ def prepare_tiling_tasks(rasters_for_tiling, in_ranges,
                                          y=tile.y,
                                          tms=tms,
                                          tilesize=tilesize,
-                                         in_range=in_range,
                                          image_format=image_format,
                                          subdirectory_name=os.path.splitext(os.path.basename(raster_for_tiling))[0],
                                          nodata_mask_array=nodata_mask)
@@ -192,7 +193,8 @@ def grib_tiler(input_filename,
             uv_subsets_task = TranslateTask(input_filename=input_filename,
                                             output_filename=output_filename,
                                             output_format='VRT',
-                                            bands=uv_bands_indexes)
+                                            bands=uv_bands_indexes,
+                                            output_dtype=None)
             uv_subsets_tasks.append(uv_subsets_task)
         uv_subsets = process_map(translate_raster,
                                  uv_subsets_tasks,
@@ -207,11 +209,12 @@ def grib_tiler(input_filename,
                 tiles = list(mercantile.tiles(*extent, zooms))
         warp_uv_subsets = warp_input(uv_subsets, cutline_filename, cutline_layer, output_crs, threads)
         if warp_uv_subsets:
-            rasters_for_tiling = prepare_for_tiling(warp_uv_subsets, threads)
+            in_ranges = prepare_in_ranges(warp_uv_subsets, threads)
+            rasters_for_tiling = prepare_for_tiling(warp_uv_subsets, in_ranges, threads)
         else:
-            rasters_for_tiling = prepare_for_tiling(uv_subsets, threads)
-        in_ranges = prepare_in_ranges(rasters_for_tiling, threads)
-        tiling_tasks = prepare_tiling_tasks(rasters_for_tiling, in_ranges, tiles, output, tms, tilesize, image_format)
+            in_ranges = prepare_in_ranges(uv_subsets, threads)
+            rasters_for_tiling = prepare_for_tiling(uv_subsets, in_ranges, threads)
+        tiling_tasks = prepare_tiling_tasks(rasters_for_tiling, tiles, output, tms, tilesize, image_format)
     else:
         band_numbers = bands_handler(band_numbers)
         if not band_numbers:
@@ -223,7 +226,8 @@ def grib_tiler(input_filename,
             band_subsets_task = TranslateTask(input_filename=input_filename,
                                               output_filename=output_filename,
                                               output_format='VRT',
-                                              bands=[band_number])
+                                              bands=[band_number],
+                                              output_dtype=None)
             band_subsets_tasks.append(band_subsets_task)
         band_subsets = process_map(translate_raster,
                                    band_subsets_tasks,
@@ -240,11 +244,12 @@ def grib_tiler(input_filename,
                 tiles = list(mercantile.tiles(*extent, zooms))
         warp_band_subsets = warp_input(band_subsets, cutline_filename, cutline_layer, output_crs, threads)
         if warp_band_subsets:
-            rasters_for_tiling = prepare_for_tiling(warp_band_subsets, threads)
+            in_ranges = prepare_in_ranges(warp_band_subsets, threads)
+            rasters_for_tiling = prepare_for_tiling(warp_band_subsets, in_ranges, threads)
         else:
-            rasters_for_tiling = prepare_for_tiling(band_subsets, threads)
-        in_ranges = prepare_in_ranges(rasters_for_tiling, threads)
-        tiling_tasks = prepare_tiling_tasks(rasters_for_tiling, in_ranges, tiles, output, tms, tilesize, image_format,
+            in_ranges = prepare_in_ranges(band_subsets, threads)
+            rasters_for_tiling = prepare_for_tiling(band_subsets, in_ranges, threads)
+        tiling_tasks = prepare_tiling_tasks(rasters_for_tiling, tiles, output, tms, tilesize, image_format,
                                             generate_nodata_mask=False)
     process_map(render_tile, tiling_tasks,
                 max_workers=threads,

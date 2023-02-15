@@ -1,5 +1,6 @@
 import os
 import numpy
+import numpy as np
 import rasterio
 from rasterio.apps.translate import translate
 from rasterio.apps.warp import warp
@@ -59,11 +60,14 @@ def render_tile(render_tile_task: RenderTileTask):
                                        tile_x=render_tile_task.x,
                                        tilesize=render_tile_task.tilesize,
                                        nodata=render_tile_task.nodata,
-                                       indexes=render_tile_task.bands).post_process(
-                in_range=render_tile_task.in_range,
-                out_dtype='uint8')
-            if render_tile_task.nodata_mask:
+                                       indexes=render_tile_task.bands)
+            if isinstance(render_tile_task.nodata_mask, np.ndarray):
                 tile.mask = render_tile_task.nodata_mask
+            if render_tile_task.image_format == 'JPEG':
+                if tile.data.shape[0] == 2:
+                    tile_mask = numpy.reshape(numpy.expand_dims(tile.mask, axis=-1), (1, render_tile_task.tilesize,
+                                                                                      render_tile_task.tilesize))
+                    tile.data = np.concatenate((tile.data, tile_mask), axis=0)
             tile_bytes = tile.render(img_format=render_tile_task.image_format)
             del tile
         except TileOutsideBounds:
@@ -78,6 +82,7 @@ def translate_raster(translate_task: TranslateTask):
     translate(src_ds=translate_task.input_filename,
               dst_ds=translate_task.output_filename,
               bands=translate_task.bands,
-              output_format=translate_task.output_format)
+              output_format=translate_task.output_format,
+              scale=translate_task.scale,
+              output_dtype=translate_task.output_dtype)
     return translate_task.output_filename
-
