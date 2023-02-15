@@ -4,7 +4,11 @@ import morecantile
 from pyproj import CRS
 
 CUSTOM_TMS = {
-    'EPSG:3575': morecantile.TileMatrixSet.custom(crs=CRS.from_epsg(3575), extent=[-180.0 / 512, -90.0 / 512, 180.0 / 512, 85.0 / 512]),
+    'EPSG:3575': morecantile.TileMatrixSet.custom(crs=CRS.from_epsg(3575), extent=[180.0 / 512,
+                                                                                   -90.0 / 512,
+                                                                                   -180.0 / 512,
+                                                                                   90.0 / 512],
+                                                  extent_crs=CRS.from_epsg(4326)),
     'EPSG:4326': morecantile.tms.get('WGS1984Quad')
 }
 

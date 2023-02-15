@@ -1,5 +1,4 @@
 import os
-import os
 import sys
 import tempfile
 import warnings
@@ -7,40 +6,152 @@ import warnings
 import click
 import fiona
 import mercantile
-import morecantile
-import numpy
+import numpy as np
 import rasterio
-import rasterio.mask
 from pyproj import CRS
-from rasterio.apps.vrt import build_vrt
 from tqdm.contrib.concurrent import process_map
 
 from grib_tiler.data.tms import load_tms
-from grib_tiler.steps import extract_band, warp_band, get_in_ranges, render_tile, \
-    write_metainfo
-from grib_tiler.utils import click_options
-from grib_tiler.utils.click_handlers import bands_handler, zooms_handler
-from grib_tiler.utils.step_namedtuples import TranslateTask, WarpTask, InRangeTask, RenderTileTask, MetaInfoTask
+from grib_tiler.tasks import WarpTask, InRangeTask, TranslateTask, RenderTileTask
+from grib_tiler.tasks.executors import warp_raster, in_range_calculator, translate_raster, render_tile
+from grib_tiler.utils import click_options, seek_by_meta_value
+from grib_tiler.utils.click_handlers import zooms_handler, bands_handler
 
 warnings.filterwarnings("ignore")
 os.environ['CPL_LOG'] = '/dev/null'
-os.environ['GRIB_ADJUST_LONGITUDE_RANGE'] = 'NO'
 
 EPSG_4326 = CRS.from_epsg(4326)
 EPSG_4326_BOUNDS = list(EPSG_4326.area_of_use.bounds)
 
 temp_dir = tempfile.TemporaryDirectory()
-temp_dir_name = '/root/development/temp'
 
 
-def buildvrt_wrapper(vrtask):
-    return build_vrt(vrtask.src_ds_s, vrtask.band)
+def warp_input(input_subsets, cutline_filename, cutline_layer, output_crs, threads):
+    warp_subsets = []
+    warp_subsets_tasks = []
+    if cutline_filename:
+        if output_crs:
+            for input_subset in input_subsets:
+                warp_subsets_task = WarpTask(input_filename=input_subset,
+                                             output_directory=temp_dir.name,
+                                             output_crs=output_crs,
+                                             cutline_filename=cutline_filename,
+                                             cutline_layer_name=cutline_layer,
+                                             output_format='VRT')
+                warp_subsets_tasks.append(warp_subsets_task)
+        else:
+            for input_subset in input_subsets:
+                warp_subsets_task = WarpTask(input_filename=input_subset,
+                                             output_directory=temp_dir.name,
+                                             cutline_filename=cutline_filename,
+                                             cutline_layer_name=cutline_layer,
+                                             output_format='VRT')
+                warp_subsets_tasks.append(warp_subsets_task)
+    else:
+        if output_crs:
+            if output_crs in ['EPSG:3857']:
+                sub_warp_subsets_tasks = []
+                for input_subset in input_subsets:
+                    sub_warp_subsets_task = WarpTask(input_filename=input_subset,
+                                                     output_directory=temp_dir.name,
+                                                     output_crs='EPSG:4326',
+                                                     target_extent=EPSG_4326_BOUNDS,
+                                                     target_extent_crs='EPSG:4326',
+                                                     output_format='VRT')
+                    sub_warp_subsets_tasks.append(sub_warp_subsets_task)
+                input_subsets = process_map(warp_raster,
+                                            sub_warp_subsets_tasks,
+                                            max_workers=threads,
+                                            desc='Предварительное перепроецирование каналов')
+                for input_subset in input_subsets:
+                    warp_subsets_task = WarpTask(input_filename=input_subset,
+                                                 output_directory=temp_dir.name,
+                                                 output_crs=output_crs,
+                                                 target_extent=list(CRS.from_epsg(3857).area_of_use.bounds),
+                                                 target_extent_crs='EPSG:4326',
+                                                 output_format='VRT')
+                    warp_subsets_tasks.append(warp_subsets_task)
+            else:
+                for input_subset in input_subsets:
+                    warp_subsets_task = WarpTask(input_filename=input_subset,
+                                                 output_directory=temp_dir.name,
+                                                 output_crs=output_crs,
+                                                 target_extent=list(
+                                                     CRS.from_user_input(output_crs).area_of_use.bounds),
+                                                 target_extent_crs='EPSG:4326',
+                                                 output_format='VRT')
+                    warp_subsets_tasks.append(warp_subsets_task)
+    warp_subsets = process_map(warp_raster,
+                               warp_subsets_tasks,
+                               max_workers=threads,
+                               desc='Финальное перепроецирование каналов')
+    return warp_subsets
+
+
+def prepare_for_tiling(warped_subsets, threads):
+    rasters_for_tiling_tasks = []
+    if warped_subsets:
+        for warped_subset in warped_subsets:
+            output_filename = warped_subset.replace('vrt', 'tiff').replace('_warped', '')
+            rasters_for_tiling_task = TranslateTask(input_filename=warped_subset,
+                                                    output_filename=output_filename,
+                                                    output_format='GTiff')
+            rasters_for_tiling_tasks.append(rasters_for_tiling_task)
+    else:
+        for warped_subset in warped_subsets:
+            output_filename = warped_subset.replace('vrt', 'tiff').replace('_warped', '')
+            rasters_for_tiling_task = TranslateTask(input_filename=warped_subset,
+                                                    output_filename=output_filename,
+                                                    output_format='GTiff')
+            rasters_for_tiling_tasks.append(rasters_for_tiling_task)
+    rasters_for_tiling = process_map(translate_raster,
+                                     rasters_for_tiling_tasks,
+                                     max_workers=threads,
+                                     desc='Рендеринг преобразованных каналов для тайлирования')
+    return rasters_for_tiling
+
+
+def prepare_in_ranges(rasters_for_tiling, threads):
+    in_range_tasks = []
+    for raster_for_tiling in rasters_for_tiling:
+        in_range_task = InRangeTask(input_filename=raster_for_tiling)
+        in_range_tasks.append(in_range_task)
+    in_ranges = process_map(in_range_calculator,
+                            in_range_tasks,
+                            max_workers=threads,
+                            desc='Вычисление мин/макс значений каналов')
+    return in_ranges
+
+
+def prepare_tiling_tasks(rasters_for_tiling, in_ranges,
+                         tiles, output,
+                         tms, tilesize,
+                         image_format, generate_nodata_mask=True):
+    tiling_tasks = []
+    nodata_mask = None
+    if generate_nodata_mask:
+        nodata_mask = np.zeros((tilesize, tilesize), dtype='uint8')
+    for raster_for_tiling, in_range in zip(rasters_for_tiling, in_ranges):
+        for tile in tiles:
+            tiling_task = RenderTileTask(input_filename=raster_for_tiling,
+                                         output_directory=output,
+                                         z=tile.z,
+                                         x=tile.x,
+                                         y=tile.y,
+                                         tms=tms,
+                                         tilesize=tilesize,
+                                         in_range=in_range,
+                                         image_format=image_format,
+                                         subdirectory_name=os.path.splitext(os.path.basename(raster_for_tiling))[0],
+                                         nodata_mask_array=nodata_mask)
+            tiling_tasks.append(tiling_task)
+    return tiling_tasks
 
 
 @click.command(short_help='Генератор растровых тайлов из GRIB(2)-файлов.')
 @click_options.files_in_arg
 @click_options.file_out_arg
-@click_options.uv_opt
+@click_options.wind_opt
 @click_options.bands_opt
 @click_options.img_format_opt
 @click_options.cutline_opt
@@ -49,184 +160,96 @@ def buildvrt_wrapper(vrtask):
 @click_options.out_crs_opt
 @click_options.threads_opt
 @click_options.zooms_opt
-@click_options.nodata_opt
-@click_options.zero_mask_flag
-def grib_tiler(inputs,
+def grib_tiler(input_filename,
                output,
-               bands,
-               img_format,
-               cutline,
+               band_numbers,
+               image_format,
+               cutline_filename,
                cutline_layer,
                tilesize,
                output_crs,
                threads,
                zooms,
-               nodata,
-               uv,
-               zero_mask
-               ):
-    tms = load_tms(output_crs)
-    os.makedirs(output, exist_ok=True)
-
+               wind):
+    tms = None
+    if output_crs:
+        tms = load_tms(output_crs)
     zooms = zooms_handler(zooms)
 
-    if uv:
-        uv_in_ranges, uv_translated = uv_handler(cutline, cutline_layer, inputs, output_crs, temp_dir_name,
-                                                 threads)
-        metainfo_writer(output, uv_in_ranges, uv_translated)
-        render_tile_task = []
-        if zero_mask:
-            zero_mask = numpy.zeros((tilesize, tilesize), dtype="uint8")
-        with rasterio.open(inputs[0]) as input:
-            render_bounds = input.bounds
-            tiles_list = list(mercantile.tiles(*render_bounds, zooms))
-        for tile in tiles_list:
-            for filename, in_range in zip(uv_translated, uv_in_ranges):
-                render_tile_task.append(
-                    RenderTileTask(input_fn=filename, z=tile.z, x=tile.x, y=tile.y, tms=tms, nodata=nodata,
-                                   in_range=in_range, tilesize=tilesize,
-                                   img_format=img_format, band_name=os.path.splitext(os.path.basename(filename))[0],
-                                   output_dir=output, zero_mask=zero_mask)
-                )
-        process_map(render_tile, render_tile_task, max_workers=threads, desc='Рендеринг тайлов')
+    if wind:
+        uv_seek_results = seek_by_meta_value(input_filename, GRIB_ELEMENT=['UGRD', 'VGRD'])
+        u_bands_list = uv_seek_results['UGRD']
+        v_bands_list = uv_seek_results['VGRD']
+        if len(u_bands_list) != len(v_bands_list):
+            click.echo('Входной GRIB-файл непригоден для генерации UV-тайлов')
+            raise click.Abort()
+        uv_bands_list = list(zip(u_bands_list, v_bands_list))
+        uv_subsets_tasks = []
+        for uv_bands in uv_bands_list:
+            uv_bands_indexes = [list(uv_bands[0].keys())[0], list(uv_bands[1].keys())[0]]
+            uv_band_comment = list(uv_bands[0].values())[0]['GRIB_SHORT_NAME']
+            output_filename = os.path.join(temp_dir.name, f'{uv_band_comment}.vrt')
+            uv_subsets_task = TranslateTask(input_filename=input_filename,
+                                            output_filename=output_filename,
+                                            output_format='VRT',
+                                            bands=uv_bands_indexes)
+            uv_subsets_tasks.append(uv_subsets_task)
+        uv_subsets = process_map(translate_raster,
+                                 uv_subsets_tasks,
+                                 max_workers=threads,
+                                 desc='Извлечение каналов ветра')
+        if cutline_filename:
+            with fiona.open(cutline_filename) as cutline_fio_ds:
+                tiles = list(mercantile.tiles(*cutline_fio_ds.bounds, zooms))
+        else:
+            with rasterio.open(input_filename) as cut_warped_rio_ds:
+                extent = cut_warped_rio_ds.bounds
+                tiles = list(mercantile.tiles(*extent, zooms))
+        warp_uv_subsets = warp_input(uv_subsets, cutline_filename, cutline_layer, output_crs, threads)
+        if warp_uv_subsets:
+            rasters_for_tiling = prepare_for_tiling(warp_uv_subsets, threads)
+        else:
+            rasters_for_tiling = prepare_for_tiling(uv_subsets, threads)
+        in_ranges = prepare_in_ranges(rasters_for_tiling, threads)
+        tiling_tasks = prepare_tiling_tasks(rasters_for_tiling, in_ranges, tiles, output, tms, tilesize, image_format)
     else:
-        inputs = inputs[0]
-        in_ranges, translated = band_handler(cutline, cutline_layer, inputs, output_crs, temp_dir_name, threads, bands)
-        metainfo_writer(output, in_ranges, translated)
-        render_tile_task = []
-        if zero_mask:
-            zero_mask = numpy.zeros((tilesize, tilesize), dtype="uint8")
-        with rasterio.open(translated[0]) as input:
-            render_bounds = input.bounds
-            tiles_list = list(mercantile.tiles(*render_bounds, zooms))
-        for tile in tiles_list:
-            for filename, in_range in zip(translated, in_ranges):
-                render_tile_task.append(
-                    RenderTileTask(input_fn=filename, z=tile.z, x=tile.x, y=tile.y, tms=tms, nodata=nodata,
-                                   in_range=in_range, tilesize=tilesize,
-                                   img_format=img_format, band_name=os.path.splitext(os.path.basename(filename))[0],
-                                   output_dir=output,
-                                   zero_mask=zero_mask)
-                )
-        process_map(render_tile, render_tile_task, max_workers=threads, desc='Рендеринг тайлов')
+        band_numbers = bands_handler(band_numbers)
+        if not band_numbers:
+            with rasterio.open(input_filename) as input_rio_ds:
+                band_numbers = input_rio_ds.indexes
+        band_subsets_tasks = []
+        for band_number in band_numbers:
+            output_filename = os.path.join(temp_dir.name, f'{band_number}.vrt')
+            band_subsets_task = TranslateTask(input_filename=input_filename,
+                                              output_filename=output_filename,
+                                              output_format='VRT',
+                                              bands=[band_number])
+            band_subsets_tasks.append(band_subsets_task)
+        band_subsets = process_map(translate_raster,
+                                   band_subsets_tasks,
+                                   max_workers=threads,
+                                   desc='Извлечение выбранных каналов GRIB-файла')
+        tiles = None
+        warp_band_subsets = None
+        if cutline_filename:
+            with fiona.open(cutline_filename) as cutline_fio_ds:
+                tiles = list(mercantile.tiles(*cutline_fio_ds.bounds, zooms))
+        else:
+            with rasterio.open(input_filename) as cut_warped_rio_ds:
+                extent = cut_warped_rio_ds.bounds
+                tiles = list(mercantile.tiles(*extent, zooms))
+        warp_band_subsets = warp_input(band_subsets, cutline_filename, cutline_layer, output_crs, threads)
+        if warp_band_subsets:
+            rasters_for_tiling = prepare_for_tiling(warp_band_subsets, threads)
+        else:
+            rasters_for_tiling = prepare_for_tiling(band_subsets, threads)
+        in_ranges = prepare_in_ranges(rasters_for_tiling, threads)
+        tiling_tasks = prepare_tiling_tasks(rasters_for_tiling, in_ranges, tiles, output, tms, tilesize, image_format,
+                                            generate_nodata_mask=False)
+    process_map(render_tile, tiling_tasks,
+                max_workers=threads,
+                desc='Рендеринг тайлов')
     temp_dir.cleanup()
-
-
-def metainfo_writer(output_dir, in_ranges, translated_input):
-    metainfo_tasks = []
-    for filename, in_range in zip(translated_input, in_ranges):
-        os.makedirs(os.path.join(output_dir, os.path.splitext(os.path.basename(filename))[0]), exist_ok=True)
-        metainfo_tasks.append(
-            MetaInfoTask(
-                in_range,
-                os.path.join(output_dir, os.path.splitext(os.path.basename(filename))[0], 'meta.json')
-            )
-        )
-    process_map(write_metainfo, metainfo_tasks, max_workers=6, desc='Генерация метаинформации к каналам')
-
-
-def band_handler(cutline, cutline_layer, input, output_crs, temp_dir, threads, bands):
-    if bands:
-        bands = bands_handler(bands)
-    else:
-        with rasterio.open(input) as input:
-            bands = input.indexes
-    extracted_bands = process_map(extract_band,
-                                  [TranslateTask(input_fn=input, output_dir=temp_dir,
-                                                 band=band, output_format='GRIB', output_format_extension='.grib2')
-                                   for band in bands],
-                                  max_workers=threads,
-                                  desc='Извлечение выбранных каналов')
-    in_ranges = process_map(get_in_ranges,
-                            [InRangeTask(input_fn=input, band=1) for input in extracted_bands],
-                            max_workers=threads,
-                            desc='Вычисление мин/макс выбранных каналов')
-    warped_bands = process_map(warp_band,
-                               [WarpTask(input_fn=u_fn, output_dir=temp_dir,
-                                         output_crs=output_crs, multithreaded=True,
-                                         cutline_fn=cutline,
-                                         cutline_layername=cutline_layer, output_format='GTiff',
-                                         src_nodata=0, dst_nodata=0,
-                                         write_flush=True) for u_fn in extracted_bands],
-                               max_workers=threads,
-                               desc='Перепроецирование выбранных каналов')
-    return in_ranges, warped_bands
-
-
-def uv_handler(cutline, cutline_layer, inputs, output_crs, temp_dir, threads):
-    if len(inputs) != 1:
-        click.echo('Допускается на вход только один файл, содержащий U- и V- компоненты')
-        raise click.Abort()
-    input = inputs[0]
-    uv_bands = {}
-    with rasterio.open(input) as grib_input:
-        for band_idx in grib_input.indexes:
-            band_tags = grib_input.tags(band_idx)
-            if 'UGRD' == band_tags['GRIB_ELEMENT']:
-                uv_bands[band_tags['GRIB_SHORT_NAME']] = []
-                uv_bands[band_tags['GRIB_SHORT_NAME']].append(band_idx)
-            if 'VGRD' == band_tags['GRIB_ELEMENT']:
-                uv_bands[band_tags['GRIB_SHORT_NAME']].append(band_idx)
-    uv_shortnames = list(uv_bands.keys())
-    uv_filenames = process_map(extract_band,
-                               [TranslateTask(input_fn=input, output_dir=temp_dir, band=uv,
-                                              output_format='GTiff',
-                                              output_format_extension='.tiff',
-                                              output_fn=os.path.join(temp_dir, f'{uv_shortname}.tiff')) for
-                                uv_shortname, uv in uv_bands.items()],
-                               max_workers=threads,
-                               desc='Извлечение UV-компонент ветра')
-    prewarped_uv_filenames = process_map(warp_band,
-                                         [WarpTask(input_fn=uv_fn, output_dir=temp_dir,
-                                                   output_crs='EPSG:4326', multithreaded=True,
-                                                   cutline_fn=None,
-                                                   cutline_layername=None, output_format='GTiff',
-                                                   src_nodata=None, dst_nodata=None,
-                                                   write_flush=True,
-                                                   output_fn=None,
-                                                   target_extent=EPSG_4326.to_string(),
-                                                   target_extent_crs=EPSG_4326_BOUNDS) for uv_idx, uv_fn in
-                                          enumerate(uv_filenames)],
-                                         max_workers=threads,
-                                         desc='Предварительное перепроецирование UV-компонент ветра')
-    cut_uv_filenames = process_map(warp_band,
-                                   [WarpTask(input_fn=uv_fn, output_dir=temp_dir,
-                                             output_crs='EPSG:4326', multithreaded=True,
-                                             cutline_fn=cutline,
-                                             cutline_layername=cutline_layer, output_format='GTiff',
-                                             src_nodata=None, dst_nodata=None,
-                                             write_flush=True,
-                                             output_fn=None,
-                                             target_extent=None,
-                                             target_extent_crs=None) for uv_idx, uv_fn in
-                                    enumerate(prewarped_uv_filenames)],
-                                   max_workers=threads,
-                                   desc='Обрезка UV-компонент ветра')
-    u_inranges = process_map(get_in_ranges,
-                             [InRangeTask(input_fn=input, band=1) for input in cut_uv_filenames],
-                             max_workers=threads,
-                             desc='Вычисление мин/макс U-компонент')
-    v_inranges = process_map(get_in_ranges,
-                             [InRangeTask(input_fn=input, band=2) for input in cut_uv_filenames],
-                             max_workers=threads,
-                             desc='Вычисление мин/макс V-компонент')
-    uv_inranges = list(zip(u_inranges, v_inranges))
-    if output_crs:
-        uv_filenames = process_map(warp_band,
-                                   [WarpTask(input_fn=uv_fn, output_dir=temp_dir,
-                                             output_crs=output_crs, multithreaded=True,
-                                             cutline_fn=None,
-                                             cutline_layername=None,
-                                             output_format='GTiff',
-                                             src_nodata=None, dst_nodata=None,
-                                             write_flush=True,
-                                             target_extent=None,
-                                             target_extent_crs=None,
-                                             output_fn=None)
-                                    for uv_idx, uv_fn in enumerate(cut_uv_filenames)],
-                                   max_workers=threads,
-                                   desc='Перепроецирование UV-компонент ветра')
-    return uv_inranges, uv_filenames
 
 
 if __name__ == '__main__':

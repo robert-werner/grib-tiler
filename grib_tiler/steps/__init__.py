@@ -101,14 +101,14 @@ def get_tile_extension(tile_img_format):
 
 
 def render_tile(render_task):
-    os.makedirs(os.path.join(render_task.output_dir, render_task.band_name), exist_ok=True)
+    os.makedirs(os.path.join(render_task.output_dir, render_task.subdirectory_name), exist_ok=True)
     with Reader(input=render_task.input_fn, tms=render_task.tms) as input_file_rio:
         indexes = list(
             range(1, len(input_file_rio.dataset.indexes) + 1))
-        in_range = render_task.in_range
+        in_range = render_task.in_range_calculator
         if len(indexes) == 1:
             indexes = indexes[0]
-            in_range = [render_task.in_range, ]
+            in_range = [render_task.in_range_calculator, ]
         try:
             tile = input_file_rio.tile(tile_z=render_task.z,
                                        tile_y=render_task.y,
@@ -135,11 +135,11 @@ def render_tile(render_task):
 
 def write_metainfo(meta_info_task):
     meta_info = META_INFO
-    in_range = meta_info_task.in_range
+    in_range = meta_info_task.in_range_calculator
     if isinstance(in_range[0], float):
         in_range = [in_range]
-    for idx, band, in_range in zip(range(0, len(meta_info_task.in_range) + 1),
-                                   ['r', 'g', 'b', 'a'][0:len(meta_info_task.in_range)], in_range):
+    for idx, band, in_range in zip(range(0, len(meta_info_task.in_range_calculator) + 1),
+                                   ['r', 'g', 'b', 'a'][0:len(meta_info_task.in_range_calculator)], in_range):
         meta_info['meta']['common'][idx][f'{band}step'] = (in_range[1] - in_range[0]) / 255
         meta_info['meta']['common'][idx][f'{band}min'] = in_range[0]
     with open(meta_info_task.output_dir, 'w') as meta_json:

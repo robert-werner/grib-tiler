@@ -1,6 +1,4 @@
-from abc import ABC, abstractmethod
 from collections import namedtuple
-from typing import Optional
 
 RenderTileTask = namedtuple('RenderTileTask',
                             ['input_fn', 'z', 'x', 'y', 'tms', 'nodata', 'in_range', 'tilesize', 'img_format',

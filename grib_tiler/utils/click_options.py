@@ -10,17 +10,17 @@ multiband_opt = click.option(
     help='Генерировать многоканальные тайлы (если каналов больше 3-ёх, то выходной формат тайлов всегда будет TIFF)'
 )
 
-uv_opt = click.option(
-    '-uv',
-    'uv',
-is_flag=True,
+wind_opt = click.option(
+    '--wind',
+    'wind',
+    is_flag=True,
     default=False,
     help='Генерировать UV-тайлы (можно подавать на вход пару U- и V- файлов)'
 )
 
 cutline_opt = click.option(
     '--cutline',
-    'cutline',
+    'cutline_filename',
     default=None,
     help='Путь к файлу обрезки растра'
 )
@@ -34,20 +34,20 @@ cutline_layer_opt = click.option(
 )
 
 files_in_arg = click.argument(
-    'inputs',
-    nargs=-1,
+    'input_filename',
     type=click.Path(resolve_path=True, file_okay=True, dir_okay=False, exists=True),
     required=True,
-    metavar="INPUTS...")
+    metavar="INPUT...")
 
 file_out_arg = click.argument(
     'OUTPUT',
+    required=True,
     type=click.Path(resolve_path=True, file_okay=False))
 
 img_format_opt = click.option(
     '-f',
     '--format',
-    'img_format',
+    'image_format',
     default='PNG',
     type=click.Choice([
         'PNG', 'JPEG', 'TIFF'
@@ -61,15 +61,6 @@ memory_opt = click.option(
     help='''
     Обрабатывать входные данные в ОЗУ.
     Без этого флага данные будут обрабатываться частично на жёстком диске.
-    '''
-)
-
-zero_mask_flag = click.option(
-    '--zero',
-    'zero_mask',
-    is_flag=True,
-    help='''
-    Заполнить пустой канал выходного тайла нулями.
     '''
 )
 
@@ -104,7 +95,7 @@ threads_opt = click.option('--threads',
 
 nodata_opt = click.option(
     '--nodata',
-    'nodata',
+    'output_nodata',
     default=0,
     help='Значение "нет данных".',
 )
@@ -118,17 +109,10 @@ zooms_opt = click.option(
 bands_opt = click.option(
     '-b',
     '--band',
-    'bands',
+    'band_numbers',
     default=None,
     type=str,
     help="Каналы входного изображения для генерации тайлов.")
-
-uv_generate_opt = click.option(
-    '-uv',
-    'generate_uv',
-    default=None,
-    help='Генерация тайлов из u- и -v компонентов ветра'
-)
 
 metainfo_generate_opt = click.option(
     '-mi',
