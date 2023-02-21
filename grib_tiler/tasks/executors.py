@@ -32,20 +32,12 @@ def warp_raster(warp_task: WarpTask):
 def in_range_calculator(inrange_task: InRangeTask):
     in_ranges = []
     with rasterio.open(inrange_task.input_filename) as input_rio:
-        if len(input_rio.indexes) == 1:
-            try:
-                statistics = input_rio.statistics(1, approx=True, clear_cache=True)
-                return statistics.min, statistics.max
-            except rasterio._err.CPLE_AppDefinedError:
-                statistics = input_rio.statistics(1, approx=False, clear_cache=True)
-                return statistics.min, statistics.max
-        for band_index in input_rio.indexes:
-            try:
-                statistics = input_rio.statistics(band_index, approx=True, clear_cache=True)
-                in_ranges.append((statistics.min, statistics.max))
-            except rasterio._err.CPLE_AppDefinedError:
-                statistics = input_rio.statistics(band_index, approx=False, clear_cache=True)
-                in_ranges.append((statistics.min, statistics.max))
+        try:
+            statistics = input_rio.statistics(inrange_task.index, approx=True, clear_cache=True)
+            return statistics.min, statistics.max
+        except rasterio._err.CPLE_AppDefinedError:
+            statistics = input_rio.statistics(inrange_task.index, approx=False, clear_cache=True)
+            return statistics.min, statistics.max
     return tuple(in_ranges)
 
 

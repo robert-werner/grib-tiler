@@ -47,8 +47,14 @@ def bands_handler(value):
                 lambda x: int(x) if x else None, value.split(','))))
         else:
             if value:
-                band_indexes.append(int(value))
+                try:
+                    value = int(value)
+                except:
+                    raise click.UsageError('Каналы должны указываться только цифрами')
+                band_indexes.append(value)
         return band_indexes
+    else:
+        return []
 
 
 def cpu_count_handler(ctx, param, value):

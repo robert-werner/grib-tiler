@@ -70,16 +70,18 @@ class RenderTileTask(Task):
         if self.subdirectory_name:
             self.output_directory = os.path.join(self.output_directory, self.subdirectory_name)
         self.output_filename = os.path.join(self.output_directory, str(self.z), str(self.x),
-                                            f'{self.y}{self.get_tile_extension(self.image_format)}')
+                                            f'{self.y}{self.get_raster_extension(self.image_format)}')
         self._nodata_mask = nodata_mask_array
 
 
     @staticmethod
-    def get_tile_extension(tile_img_format):
+    def get_raster_extension(tile_img_format):
         img_to_ext = {
             'PNG': '.png',
             'JPEG': '.jpg',
-            'TIFF': '.tiff'
+            'GTIFF': '.tiff',
+            'GTiff': '.tiff',
+            'VRT': '.vrt'
         }
         return img_to_ext[tile_img_format]
 
@@ -99,21 +101,22 @@ class RenderTileTask(Task):
 
 class InRangeTask(Task):
 
-    def __init__(self, input_filename):
+    def __init__(self, input_filename, index):
         super().__init__(input_filename)
+        self.index = index
 
 
 class TranslateTask(Task):
 
     def __init__(self, input_filename, output_filename, output_directory=None,
-                 bands=None,
-                 output_format=None,
+                 band=None,
+                 output_format='VRT',
                  scale=None,
                  output_dtype='Byte'):
         super().__init__(input_filename=input_filename,
                          output_filename=output_filename,
                          output_directory=output_directory)
-        self.bands = bands
+        self.bands = band
         self.output_format = output_format
         self.scale = scale
         self.output_dtype = output_dtype
