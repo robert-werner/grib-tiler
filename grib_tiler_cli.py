@@ -256,7 +256,6 @@ def grib_tiler(input_filename,
                                    band_subsets_tasks,
                                    max_workers=threads,
                                    desc='Извлечение выбранных каналов GRIB-файла')
-        tiles = None
         warp_band_subsets = None
         warp_band_subsets = warp_input(band_subsets, cutline_filename, cutline_layer, output_crs, threads)
         if warp_band_subsets:
