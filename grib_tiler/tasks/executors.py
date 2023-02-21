@@ -18,6 +18,7 @@ def warp_raster(warp_task: WarpTask):
         output_crs=warp_task.output_crs,
         multi=warp_task.multithreading,
         cutline_fn=warp_task.cutline_filename,
+        resample_algo='bilinear',
         cutline_layer=warp_task.cutline_layer_name,
         output_format=warp_task.output_format,
         src_nodata=warp_task.source_nodata,

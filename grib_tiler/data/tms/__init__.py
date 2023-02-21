@@ -14,13 +14,14 @@ CUSTOM_TMS = {
 
 
 def load_tms(output_crs):
-    if output_crs in CUSTOM_TMS:
-        tms = CUSTOM_TMS[output_crs]
+    crs = CRS.from_user_input(output_crs)
+    crs_name = CRS.from_user_input(output_crs).to_string()
+    if crs_name in CUSTOM_TMS:
+        tms = CUSTOM_TMS[crs_name]
     else:
-        crs = CRS.from_user_input(output_crs)
         tms = morecantile.TileMatrixSet.custom(
-            extent=crs.area_of_use.bounds,
+            extent=list(crs.area_of_use.bounds),
             crs=crs,
             extent_crs=CRS.from_epsg(4326)
         )
-    return tms
+    return tms, crs_name

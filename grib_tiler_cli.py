@@ -38,7 +38,6 @@ META_INFO = {
 }
 
 
-
 def warp_input(input_subsets, cutline_filename, cutline_layer, output_crs, threads):
     warp_subsets = []
     warp_subsets_tasks = []
@@ -201,8 +200,12 @@ def grib_tiler(input_filename,
                wind):
     tms = None
     if output_crs:
-        tms = load_tms(output_crs)
+        tms, output_crs = load_tms(output_crs)
     zooms = zooms_handler(zooms)
+
+    with rasterio.open(input_filename) as cut_warped_rio_ds:
+        extent = cut_warped_rio_ds.bounds
+        tiles = list(mercantile.tiles(*extent, zooms))
 
     if wind:
         uv_seek_results = seek_by_meta_value(input_filename, GRIB_ELEMENT=['UGRD', 'VGRD'])
@@ -227,13 +230,6 @@ def grib_tiler(input_filename,
                                  uv_subsets_tasks,
                                  max_workers=threads,
                                  desc='Извлечение каналов ветра')
-        if cutline_filename:
-            with fiona.open(cutline_filename) as cutline_fio_ds:
-                tiles = list(mercantile.tiles(*cutline_fio_ds.bounds, zooms))
-        else:
-            with rasterio.open(input_filename) as cut_warped_rio_ds:
-                extent = cut_warped_rio_ds.bounds
-                tiles = list(mercantile.tiles(*extent, zooms))
         warp_uv_subsets = warp_input(uv_subsets, cutline_filename, cutline_layer, output_crs, threads)
         if warp_uv_subsets:
             in_ranges = prepare_in_ranges(warp_uv_subsets, threads)
@@ -241,7 +237,7 @@ def grib_tiler(input_filename,
         else:
             in_ranges = prepare_in_ranges(uv_subsets, threads)
             rasters_for_tiling = prepare_for_tiling(uv_subsets, in_ranges, threads)
-        tiling_tasks = prepare_tiling_tasks(rasters_for_tiling, tiles, output, tms, tilesize, image_format,  in_ranges)
+        tiling_tasks = prepare_tiling_tasks(rasters_for_tiling, tiles, output, tms, tilesize, image_format, in_ranges)
     else:
         band_numbers = bands_handler(band_numbers)
         if not band_numbers:
@@ -262,13 +258,6 @@ def grib_tiler(input_filename,
                                    desc='Извлечение выбранных каналов GRIB-файла')
         tiles = None
         warp_band_subsets = None
-        if cutline_filename:
-            with fiona.open(cutline_filename) as cutline_fio_ds:
-                tiles = list(mercantile.tiles(*cutline_fio_ds.bounds, zooms))
-        else:
-            with rasterio.open(input_filename) as cut_warped_rio_ds:
-                extent = cut_warped_rio_ds.bounds
-                tiles = list(mercantile.tiles(*extent, zooms))
         warp_band_subsets = warp_input(band_subsets, cutline_filename, cutline_layer, output_crs, threads)
         if warp_band_subsets:
             in_ranges = prepare_in_ranges(warp_band_subsets, threads)
