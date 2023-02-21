@@ -6,6 +6,7 @@ from grib_tiler.utils.click_handlers import cpu_count_handler, crs_handler, file
 multiband_opt = click.option(
     '--multiband',
     'multiband',
+    is_flag=True,
     default=False,
     help='Генерировать многоканальные тайлы (если каналов больше 3-ёх, то выходной формат тайлов всегда будет TIFF)'
 )

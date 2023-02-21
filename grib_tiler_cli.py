@@ -5,7 +5,6 @@ import tempfile
 import warnings
 
 import click
-import fiona
 import mercantile
 import numpy as np
 import rasterio
@@ -39,7 +38,6 @@ META_INFO = {
 
 
 def warp_input(input_subsets, cutline_filename, cutline_layer, output_crs, threads):
-    warp_subsets = []
     warp_subsets_tasks = []
     if cutline_filename:
         if output_crs:
@@ -93,6 +91,7 @@ def warp_input(input_subsets, cutline_filename, cutline_layer, output_crs, threa
                                                  target_extent_crs='EPSG:4326',
                                                  output_format='VRT')
                     warp_subsets_tasks.append(warp_subsets_task)
+    warp_subsets = []
     warp_subsets = process_map(warp_raster,
                                warp_subsets_tasks,
                                max_workers=threads,
@@ -178,7 +177,6 @@ def prepare_tiling_tasks(rasters_for_tiling,
 @click.command(short_help='Генератор растровых тайлов из GRIB(2)-файлов.')
 @click_options.files_in_arg
 @click_options.file_out_arg
-@click_options.wind_opt
 @click_options.bands_opt
 @click_options.img_format_opt
 @click_options.cutline_opt
@@ -187,6 +185,7 @@ def prepare_tiling_tasks(rasters_for_tiling,
 @click_options.out_crs_opt
 @click_options.threads_opt
 @click_options.zooms_opt
+@click_options.multiband_opt
 def grib_tiler(input_filename,
                output,
                band_numbers,
@@ -197,7 +196,7 @@ def grib_tiler(input_filename,
                output_crs,
                threads,
                zooms,
-               wind):
+               multiband):
     tms = None
     if output_crs:
         tms, output_crs = load_tms(output_crs)
@@ -207,74 +206,12 @@ def grib_tiler(input_filename,
         extent = cut_warped_rio_ds.bounds
         tiles = list(mercantile.tiles(*extent, zooms))
 
-    if wind:
-        uv_seek_results = seek_by_meta_value(input_filename, GRIB_ELEMENT=['UGRD', 'VGRD'])
-        u_bands_list = uv_seek_results['UGRD']
-        v_bands_list = uv_seek_results['VGRD']
-        if len(u_bands_list) != len(v_bands_list):
-            click.echo('Входной GRIB-файл непригоден для генерации UV-тайлов')
-            raise click.Abort()
-        uv_bands_list = list(zip(u_bands_list, v_bands_list))
-        uv_subsets_tasks = []
-        for uv_bands in uv_bands_list:
-            uv_bands_indexes = [list(uv_bands[0].keys())[0], list(uv_bands[1].keys())[0]]
-            uv_band_comment = list(uv_bands[0].values())[0]['GRIB_SHORT_NAME']
-            output_filename = os.path.join(temp_dir.name, f'{uv_band_comment}.vrt')
-            uv_subsets_task = TranslateTask(input_filename=input_filename,
-                                            output_filename=output_filename,
-                                            output_format='VRT',
-                                            bands=uv_bands_indexes,
-                                            output_dtype=None)
-            uv_subsets_tasks.append(uv_subsets_task)
-        uv_subsets = process_map(translate_raster,
-                                 uv_subsets_tasks,
-                                 max_workers=threads,
-                                 desc='Извлечение каналов ветра')
-        warp_uv_subsets = warp_input(uv_subsets, cutline_filename, cutline_layer, output_crs, threads)
-        if warp_uv_subsets:
-            in_ranges = prepare_in_ranges(warp_uv_subsets, threads)
-            rasters_for_tiling = prepare_for_tiling(warp_uv_subsets, in_ranges, threads)
-        else:
-            in_ranges = prepare_in_ranges(uv_subsets, threads)
-            rasters_for_tiling = prepare_for_tiling(uv_subsets, in_ranges, threads)
-        tiling_tasks = prepare_tiling_tasks(rasters_for_tiling, tiles, output, tms, tilesize, image_format, in_ranges)
-    else:
-        band_numbers = bands_handler(band_numbers)
-        if not band_numbers:
-            with rasterio.open(input_filename) as input_rio_ds:
-                band_numbers = input_rio_ds.indexes
-        band_subsets_tasks = []
-        for band_number in band_numbers:
-            output_filename = os.path.join(temp_dir.name, f'{band_number}.vrt')
-            band_subsets_task = TranslateTask(input_filename=input_filename,
-                                              output_filename=output_filename,
-                                              output_format='VRT',
-                                              bands=[band_number],
-                                              output_dtype=None)
-            band_subsets_tasks.append(band_subsets_task)
-        band_subsets = process_map(translate_raster,
-                                   band_subsets_tasks,
-                                   max_workers=threads,
-                                   desc='Извлечение выбранных каналов GRIB-файла')
-        warp_band_subsets = None
-        warp_band_subsets = warp_input(band_subsets, cutline_filename, cutline_layer, output_crs, threads)
-        if warp_band_subsets:
-            in_ranges = prepare_in_ranges(warp_band_subsets, threads)
-            rasters_for_tiling = prepare_for_tiling(warp_band_subsets, in_ranges, threads)
-        else:
-            in_ranges = prepare_in_ranges(band_subsets, threads)
-            rasters_for_tiling = prepare_for_tiling(band_subsets, in_ranges, threads)
-        tiling_tasks = prepare_tiling_tasks(rasters_for_tiling, tiles, output, tms, tilesize, image_format, in_ranges,
-                                            generate_nodata_mask=False)
-    process_map(render_tile, tiling_tasks,
-                max_workers=threads,
-                desc='Рендеринг тайлов')
     temp_dir.cleanup()
 
 
 if __name__ == '__main__':
     try:
         grib_tiler()
-    except KeyboardInterrupt:
+    except:
         temp_dir.cleanup()
         sys.exit()

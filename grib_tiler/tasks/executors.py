@@ -35,10 +35,10 @@ def in_range_calculator(inrange_task: InRangeTask):
         if len(input_rio.indexes) == 1:
             try:
                 statistics = input_rio.statistics(1, approx=True, clear_cache=True)
-                return (statistics.min, statistics.max)
+                return statistics.min, statistics.max
             except rasterio._err.CPLE_AppDefinedError:
                 statistics = input_rio.statistics(1, approx=False, clear_cache=True)
-                return (statistics.min, statistics.max)
+                return statistics.min, statistics.max
         for band_index in input_rio.indexes:
             try:
                 statistics = input_rio.statistics(band_index, approx=True, clear_cache=True)
