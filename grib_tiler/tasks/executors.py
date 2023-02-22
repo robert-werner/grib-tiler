@@ -1,5 +1,5 @@
 import os
-import time
+import random
 
 import numpy
 import numpy as np
@@ -12,7 +12,6 @@ from rio_tiler.io import Reader
 from rio_tiler.utils import render
 
 from grib_tiler.tasks import WarpTask, InRangeTask, RenderTileTask, TranslateTask
-
 
 
 def warp_raster(warp_task: WarpTask):
@@ -35,13 +34,17 @@ def warp_raster(warp_task: WarpTask):
 
 def in_range_calculator(inrange_task: InRangeTask):
     in_ranges = []
+    bands = inrange_task.bands
+    if isinstance(inrange_task.bands, int):
+        bands = [1]
     with rasterio.open(inrange_task.input_filename) as input_rio:
-        try:
-            statistics = input_rio.statistics(inrange_task.index, approx=True, clear_cache=True)
-            return statistics.min, statistics.max
-        except rasterio._err.CPLE_AppDefinedError:
-            statistics = input_rio.statistics(inrange_task.index, approx=False, clear_cache=True)
-            return statistics.min, statistics.max
+        for band in bands:
+            try:
+                statistics = input_rio.statistics(band, approx=True, clear_cache=True)
+                in_ranges.append((statistics.min, statistics.max))
+            except rasterio._err.CPLE_AppDefinedError:
+                statistics = input_rio.statistics(band, approx=False, clear_cache=True)
+                in_ranges.append((statistics.min, statistics.max))
     return tuple(in_ranges)
 
 
@@ -88,7 +91,7 @@ def extract_band(args):
     input_filename = args[0]
     band = args[1]
     output_directory = args[2]
-    filename = f'{os.path.splitext(input_filename)[0]}_{int(time.time())}.vrt'
+    filename = f'{os.path.splitext(input_filename)[0]}_{int(random.randint(0, 1000000))}.vrt'
     output_filename = os.path.join(output_directory, filename)
     translate_task = TranslateTask(input_filename=input_filename,
                                    output_filename=output_filename,
@@ -129,3 +132,10 @@ def warp_bands(args):
                          cutline_layer_name=cutline_layer,
                          output_format='VRT')
     return warp_raster(warp_task), band, output_directory
+
+def calculate_inrange_bands(args):
+    input_filename = args[0]
+    bands = args[1]
+    inrange_task = InRangeTask(input_filename=input_filename,
+                               bands=bands)
+    return input_filename, bands, in_range_calculator(inrange_task)

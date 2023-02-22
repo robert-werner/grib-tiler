@@ -23,4 +23,4 @@ def load_tms(output_crs):
             crs=crs,
             extent_crs=CRS.from_epsg(4326)
         )
-    return tms, crs_name, crs
+    return tms, crs, crs_name

@@ -1,24 +1,20 @@
-import json
 import os
 import sys
 import tempfile
+import time
 import warnings
 
-import click
 import mercantile
-import numpy as np
 import rasterio
 from click import echo, UsageError, command
-from parallelbar import progress_imap, progress_map
 from pyproj import CRS
 from tqdm.contrib.concurrent import process_map
+from utils.click_handlers import bands_handler
 
 from grib_tiler.data.tms import load_tms
-from grib_tiler.tasks import WarpTask, InRangeTask, TranslateTask, RenderTileTask
-from grib_tiler.tasks.executors import extract_band, precut_bands, warp_bands
+from grib_tiler.tasks.executors import extract_band, precut_bands, warp_bands, calculate_inrange_bands
 from grib_tiler.utils import click_options
 from grib_tiler.utils.click_handlers import zooms_handler
-from utils.click_handlers import bands_handler
 
 warnings.filterwarnings("ignore")
 os.environ['CPL_LOG'] = '/dev/null'
@@ -100,6 +96,7 @@ def grib_tiler(input,
                     band_numbers_quantity += len(band_numbers)
                     inputs.extend([input[0]] * band_numbers_quantity)
             elif band_numbers:
+                band_numbers = [band_numbers] # Оборачиваем в ещё один массив для удобства
                 inputs.extend([input[0]] * band_numbers_quantity)
         else:
             if not band_numbers:
@@ -109,6 +106,20 @@ def grib_tiler(input,
                     inputs.extend([input[0]] * band_numbers_quantity)
             else:
                 inputs.extend([input[0]] * band_numbers_quantity)
+    if multiband:
+        generation_time = str(int(time.time()))
+        result_directory = f'{generation_time}_multiband'
+        tile_output_directories = [
+            os.path.join(output, result_directory)
+        ]
+    else:
+        generation_time = str(int(time.time()))
+        result_directory = f'{generation_time}_singleband'
+        tile_output_directories = []
+        for band in band_numbers:
+            tile_output_directories.append(
+                os.path.join(output, result_directory, str(band))
+            )
     extract_tasks = []
     for input, band_number in zip(inputs, band_numbers):
         extract_tasks.append(
@@ -122,29 +133,29 @@ def grib_tiler(input,
             band = extracted_band[1]
             output_directory = extracted_band[2]
             warp_tasks.append(
-                (input_filename, band, output_directory, output_crs_name, None, None, cutline_filename, cutline_layer)
+                [input_filename, band, output_directory, output_crs_name, None, None, cutline_filename, cutline_layer]
             )
     else:
         if output_crs_name == 'EPSG:3857':
-            extracted_bands = process_map(precut_bands, extract_tasks, max_workers=threads, desc='Предварительное перепроецирование каналов')
-            for extracted_band in extracted_bands:
-                input_filename = extracted_band[0]
-                band = extracted_band[1]
-                output_directory = extracted_band[2]
-                warp_tasks.append(
-                    (input_filename, band, output_directory, output_crs_name, output_crs.area_of_use.bounds,
-                     'EPSG:4326', None, None)
-                )
-        else:
-            for extracted_band in extracted_bands:
-                input_filename = extracted_band[0]
-                band = extracted_band[1]
-                output_directory = extracted_band[2]
-                warp_tasks.append(
-                    (input_filename, band, output_directory,  output_crs_name, output_crs.area_of_use.bounds,
-                     'EPSG:4326', None, None)
-                )
-    process_map(warp_bands, warp_tasks, max_workers=threads, desc='Перепроецирование каналов')
+            extracted_bands = process_map(precut_bands, extracted_bands, max_workers=threads, desc='Предварительное перепроецирование каналов')
+        for extracted_band in extracted_bands:
+            input_filename = extracted_band[0]
+            band = extracted_band[1]
+            output_directory = extracted_band[2]
+            warp_tasks.append(
+                [input_filename, band, output_directory, output_crs_name, output_crs.area_of_use.bounds,
+                 'EPSG:4326', None, None]
+            )
+    warped_bands = process_map(warp_bands, warp_tasks, max_workers=threads, desc='Перепроецирование каналов')
+    inrange_tasks = []
+    for warped_band in warped_bands:
+        input_filename = warped_band[0]
+        band = warped_band[1]
+        inrange_tasks.append(
+            [input_filename, band]
+        )
+    bands_inranges = process_map(calculate_inrange_bands, inrange_tasks, max_workers=threads, desc='Расчёт мин/макс значений')
+    print(bands_inranges)
     temp_dir.cleanup()
 
 
@@ -154,4 +165,3 @@ if __name__ == '__main__':
     except:
         temp_dir.cleanup()
         sys.exit()
-0
