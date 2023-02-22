@@ -53,6 +53,9 @@ def in_range_calculator(inrange_task: InRangeTask):
     if not bands:
         with rasterio.open(inrange_task.input_filename) as input_rio:
             bands = input_rio.indexes
+    else:
+        if len(bands) == 1:
+            bands = [1]
     with rasterio.open(inrange_task.input_filename) as input_rio:
         for band in bands:
             try:

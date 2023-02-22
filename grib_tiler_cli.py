@@ -173,7 +173,6 @@ def grib_tiler(input,
         inrange_tasks.append(
             [input_filename, band]
         )
-    print(inrange_tasks)
     bands_inranges = process_map(calculate_inrange_bands, inrange_tasks, max_workers=threads, desc='Расчёт мин/макс значений')
     byte_bands_tasks = []
     for tile_output_directory, band_inranges in zip(tile_output_directories, bands_inranges):
@@ -191,7 +190,7 @@ def grib_tiler(input,
             [bands_inrange[0], bands_inrange[2], temp_dir.name]
         )
     byte_bands = process_map(transalte_bands_to_byte, byte_bands_tasks, max_workers=threads, desc='Рендеринг для тайлирования')
-
+    print(byte_bands)
     temp_dir.cleanup()
 
 
