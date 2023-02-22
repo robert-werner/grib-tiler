@@ -1,9 +1,12 @@
+import json
 import os
 import sys
 import tempfile
 import time
 import warnings
+from copy import deepcopy
 
+import click
 import mercantile
 import rasterio
 from click import echo, UsageError, command
@@ -12,12 +15,12 @@ from tqdm.contrib.concurrent import process_map
 from utils.click_handlers import bands_handler
 
 from grib_tiler.data.tms import load_tms
-from grib_tiler.tasks.executors import extract_band, precut_bands, warp_bands, calculate_inrange_bands
+from grib_tiler.tasks.executors import extract_band, precut_bands, warp_bands, calculate_inrange_bands, \
+    transalte_bands_to_byte, concatenate_bands
 from grib_tiler.utils import click_options
 from grib_tiler.utils.click_handlers import zooms_handler
 
 warnings.filterwarnings("ignore")
-os.environ['CPL_LOG'] = '/dev/null'
 
 EPSG_4326 = CRS.from_epsg(4326)
 EPSG_4326_BOUNDS = list(EPSG_4326.area_of_use.bounds)
@@ -27,10 +30,6 @@ temp_dir = tempfile.TemporaryDirectory()
 META_INFO = {
     "meta": {
         "common": [
-            {"rstep": 0, "rmin": 0},
-            {"gstep": 0, "gmin": 0},
-            {"bstep": 0, "bmin": 0},
-            {"astep": 0, "amin": 0}
         ]
     }
 }
@@ -65,73 +64,93 @@ def grib_tiler(input,
 
 
     input_files_quantity = len(input)
-    band_numbers = bands_handler(band_numbers)
-    band_numbers_quantity = len(band_numbers)
+    bands_numbers = bands_handler(band_numbers)
+    bands_numbers_quantity = len(bands_numbers)
     inputs = []
     if input_files_quantity > 1:
         if multiband:
-            if not band_numbers:
+            if not bands_numbers:
                 for input_file in input:
                     with rasterio.open(input_file) as input_rio_ds:
-                        band_numbers.extend(input_rio_ds.indexes)
-                        band_numbers_quantity += len(band_numbers)
-                        inputs.extend([input_file] * len(band_numbers))
-            elif band_numbers:
-                if not all(elem == band_numbers[0] for elem in band_numbers):
+                        bands_numbers.append(input_rio_ds.indexes)
+                        bands_numbers_quantity += len(bands_numbers)
+                        inputs.extend([input_file] * len(bands_numbers))
+            elif bands_numbers:
+                if not all(elem == bands_numbers[0] for elem in bands_numbers):
                     inputs.extend(input)
-                    if band_numbers_quantity != input_files_quantity:
+                    if bands_numbers_quantity != input_files_quantity:
                         raise UsageError('Количество каналов должно соответствовать количеству входных файлов')
+                    bands_numbers = [[band_number] for band_number in bands_numbers]
                 else:
-                    inputs.extend(input)
-                    band_numbers.extend([band_numbers[0]] * input_files_quantity)
+                    if len(bands_numbers) > 1:
+                        inputs.extend(input)
+                        bands_numbers = [[band_number] for band_number in bands_numbers]
+                    else:
+                        inputs.extend(input)
+                        bands_numbers = [[bands_numbers[0]]] * input_files_quantity
+
+
         else:
             raise UsageError('Создавать одноканальные тайлы из множества (больше одного) входных файлов запрещено')
     else:
         if multiband:
-            if band_numbers_quantity == 1:
+            if bands_numbers_quantity == 1:
                 raise UsageError('Мультиканальные тайлы с одним каналом создавать запрещено')
-            elif not band_numbers:
+            elif not bands_numbers:
                 with rasterio.open(input[0]) as input_rio_ds:
-                    band_numbers.extend([input_rio_ds.indexes]) # Оборачиваем в ещё один массив для удобства
-                    band_numbers_quantity += len(band_numbers)
-                    inputs.extend([input[0]] * band_numbers_quantity)
-            elif band_numbers:
-                band_numbers = [band_numbers] # Оборачиваем в ещё один массив для удобства
-                inputs.extend([input[0]] * band_numbers_quantity)
+                    bands_numbers.append([input_rio_ds.indexes]) # Оборачиваем в ещё один массив для удобства
+                    bands_numbers_quantity += len(bands_numbers)
+                    inputs.extend([input[0]] * bands_numbers_quantity)
+            elif bands_numbers:
+                bands_numbers = [bands_numbers] # Оборачиваем в ещё один массив для удобства
+                inputs.extend([input[0]] * bands_numbers_quantity)
         else:
-            if not band_numbers:
+            if not bands_numbers:
                 with rasterio.open(input[0]) as input_rio_ds:
-                    band_numbers.extend(input_rio_ds.indexes) # Оборачиваем в ещё один массив для удобства
-                    band_numbers_quantity += len(band_numbers)
-                    inputs.extend([input[0]] * band_numbers_quantity)
+                    bands_numbers.append(input_rio_ds.indexes) # Оборачиваем в ещё один массив для удобства
+                    bands_numbers_quantity += len(bands_numbers)
+                    inputs.extend([input[0]] * bands_numbers_quantity)
             else:
-                inputs.extend([input[0]] * band_numbers_quantity)
+                inputs.extend([input[0]] * bands_numbers_quantity)
+                bands_numbers = [[band_number] for band_number in bands_numbers]
+
     if multiband:
         generation_time = str(int(time.time()))
         result_directory = f'{generation_time}_multiband'
+        tile_output_directory = os.path.join(output, result_directory)
+        os.makedirs(tile_output_directory, exist_ok=True)
         tile_output_directories = [
-            os.path.join(output, result_directory)
+            tile_output_directory
         ]
     else:
         generation_time = str(int(time.time()))
         result_directory = f'{generation_time}_singleband'
         tile_output_directories = []
-        for band in band_numbers:
-            tile_output_directories.append(
-                os.path.join(output, result_directory, str(band))
-            )
+        for band_numbers in bands_numbers:
+            for band in band_numbers:
+                tile_output_directory = os.path.join(output, result_directory, str(band))
+                os.makedirs(tile_output_directory, exist_ok=True)
+                tile_output_directories.append(
+                    os.path.join(output, result_directory, str(band))
+                )
+
     extract_tasks = []
-    for input, band_number in zip(inputs, band_numbers):
+    for input, band_number in zip(inputs, bands_numbers):
         extract_tasks.append(
-            (input, band_number, temp_dir.name)
+                (input, band_number, temp_dir.name)
         )
     extracted_bands = process_map(extract_band, extract_tasks, max_workers=threads, desc='Извлечение каналов')
+    if multiband and input_files_quantity > 1:
+        input_filenames = [extracted_band[0] for extracted_band in extracted_bands]
+        concatenated_bands = concatenate_bands([input_filenames, temp_dir.name])
+        extracted_bands = [[concatenated_bands, None, temp_dir.name]]
     warp_tasks = []
     if cutline_filename:
         for extracted_band in extracted_bands:
             input_filename = extracted_band[0]
             band = extracted_band[1]
             output_directory = extracted_band[2]
+
             warp_tasks.append(
                 [input_filename, band, output_directory, output_crs_name, None, None, cutline_filename, cutline_layer]
             )
@@ -152,10 +171,26 @@ def grib_tiler(input,
         input_filename = warped_band[0]
         band = warped_band[1]
         inrange_tasks.append(
-            [input_filename, band]
+            [input_filename, band, threads]
         )
-    bands_inranges = process_map(calculate_inrange_bands, inrange_tasks, max_workers=threads, desc='Расчёт мин/макс значений')
-    print(bands_inranges)
+    bands_inranges = process_map(calculate_inrange_bands, iter(inrange_tasks), max_workers=threads, desc='Расчёт мин/макс значений')
+    byte_bands_tasks = []
+    for tile_output_directory, band_inranges in zip(tile_output_directories, bands_inranges):
+        meta_json_filename = os.path.join(tile_output_directory, 'meta.json')
+        meta_info = deepcopy(META_INFO)
+        for band_inrange in band_inranges[2]:
+            meta_info['meta']['common'].append(
+                {'step': (band_inrange[1] - band_inrange[0]) / 255,
+                 'min': band_inrange[0]}
+            )
+        with open(meta_json_filename, 'w') as meta_json:
+            json.dump(meta_info, meta_json, indent=4)
+    for bands_inrange in bands_inranges:
+        byte_bands_tasks.append(
+            [bands_inrange[0], bands_inrange[2], temp_dir.name]
+        )
+    byte_bands = process_map(transalte_bands_to_byte, byte_bands_tasks, max_workers=threads, desc='Рендеринг для тайлирования')
+
     temp_dir.cleanup()
 
 

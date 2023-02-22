@@ -1,18 +1,25 @@
+import multiprocessing
 import os
 import random
-
+from parallelbar import progress_imap, progress_map, progress_imapu, progress_starmap
 import numpy
 import numpy as np
 import rasterio
 from pyproj import CRS
 from rasterio.apps.translate import translate
 from rasterio.apps.warp import warp
+from rasterio.apps.vrt import build_vrt
 from rio_tiler.errors import TileOutsideBounds
 from rio_tiler.io import Reader
 from rio_tiler.utils import render
 
-from grib_tiler.tasks import WarpTask, InRangeTask, RenderTileTask, TranslateTask
+from grib_tiler.tasks import WarpTask, InRangeTask, RenderTileTask, TranslateTask, VirtualTask
 
+def concatenate_raster(virtual_task: VirtualTask):
+    build_vrt(src_ds=virtual_task.input_filename,
+              dst_ds=virtual_task.output_filename,
+              resample_algo='bilinear')
+    return virtual_task.output_filename
 
 def warp_raster(warp_task: WarpTask):
     warp(
@@ -31,20 +38,25 @@ def warp_raster(warp_task: WarpTask):
         target_extent_crs=warp_task.target_extent_crs)
     return warp_task.output_filename
 
+def _inrange_calculator(rio_ds, band):
+
+    with rasterio.open(rio_ds, 'r') as rio_ds:
+        try:
+            statistics = rio_ds.statistics(band, approx=True, clear_cache=True)
+            return statistics.min, statistics.max
+        except rasterio._err.CPLE_AppDefinedError:
+            statistics = rio_ds.statistics(band, approx=False, clear_cache=True)
+            return statistics.min, statistics.max
 
 def in_range_calculator(inrange_task: InRangeTask):
     in_ranges = []
     bands = inrange_task.bands
-    if isinstance(inrange_task.bands, int):
+    if len(inrange_task.bands) == 1:
         bands = [1]
-    with rasterio.open(inrange_task.input_filename) as input_rio:
-        for band in bands:
-            try:
-                statistics = input_rio.statistics(band, approx=True, clear_cache=True)
-                in_ranges.append((statistics.min, statistics.max))
-            except rasterio._err.CPLE_AppDefinedError:
-                statistics = input_rio.statistics(band, approx=False, clear_cache=True)
-                in_ranges.append((statistics.min, statistics.max))
+    if not inrange_task.bands:
+        with rasterio.open(inrange_task.input_filename) as input_rio:
+            bands = input_rio.indexes
+    in_ranges = progress_starmap(_inrange_calculator, list(zip([inrange_task.input_filename] * len(bands), bands)), n_cpu=inrange_task.threads - 2)
     return tuple(in_ranges)
 
 
@@ -84,6 +96,7 @@ def translate_raster(translate_task: TranslateTask):
               bands=translate_task.bands,
               output_format=translate_task.output_format,
               scale=translate_task.scale,
+              resample_algo='bilinear',
               output_dtype=translate_task.output_dtype)
     return translate_task.output_filename
 
@@ -136,6 +149,29 @@ def warp_bands(args):
 def calculate_inrange_bands(args):
     input_filename = args[0]
     bands = args[1]
+    threads = args[2]
     inrange_task = InRangeTask(input_filename=input_filename,
-                               bands=bands)
+                               bands=bands,
+                               threads=threads)
     return input_filename, bands, in_range_calculator(inrange_task)
+
+def transalte_bands_to_byte(args):
+    input_filename = args[0]
+    scale = args[1]
+    output_directory = args[2]
+    filename = f'{os.path.splitext(input_filename)[0]}_byte.tiff'
+    output_filename = os.path.join(output_directory, filename)
+    translate_task = TranslateTask(input_filename=input_filename,
+                                   output_filename=output_filename,
+                                   scale=scale,
+                                   output_dtype='Byte')
+    return translate_raster(translate_task)
+
+def concatenate_bands(args):
+    input_filename = args[0]
+    output_directory = args[1]
+    filename = f'{str(random.randint(0, 1000000))}_conc.vrt'
+    output_filename = os.path.join(output_directory, filename)
+    vrt_task = VirtualTask(input_filename=input_filename,
+                           output_filename=output_filename)
+    return concatenate_raster(vrt_task)
