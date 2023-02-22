@@ -101,11 +101,9 @@ class RenderTileTask(Task):
 
 class InRangeTask(Task):
 
-    def __init__(self, input_filename, bands, threads):
+    def __init__(self, input_filename, bands):
         super().__init__(input_filename)
         self.bands = bands
-        self.threads = threads
-
 
 class TranslateTask(Task):
 

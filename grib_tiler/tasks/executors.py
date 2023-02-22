@@ -1,7 +1,7 @@
 import multiprocessing
 import os
 import random
-from parallelbar import progress_imap, progress_map, progress_imapu, progress_starmap
+
 import numpy
 import numpy as np
 import rasterio
@@ -39,8 +39,7 @@ def warp_raster(warp_task: WarpTask):
     return warp_task.output_filename
 
 def _inrange_calculator(rio_ds, band):
-
-    with rasterio.open(rio_ds, 'r') as rio_ds:
+    with rasterio.open(rio_ds) as rio_ds:
         try:
             statistics = rio_ds.statistics(band, approx=True, clear_cache=True)
             return statistics.min, statistics.max
@@ -51,13 +50,19 @@ def _inrange_calculator(rio_ds, band):
 def in_range_calculator(inrange_task: InRangeTask):
     in_ranges = []
     bands = inrange_task.bands
-    if len(inrange_task.bands) == 1:
-        bands = [1]
-    if not inrange_task.bands:
+    if not bands:
         with rasterio.open(inrange_task.input_filename) as input_rio:
             bands = input_rio.indexes
-    in_ranges = progress_starmap(_inrange_calculator, list(zip([inrange_task.input_filename] * len(bands), bands)), n_cpu=inrange_task.threads - 2)
+    with rasterio.open(inrange_task.input_filename) as input_rio:
+        for band in bands:
+            try:
+                statistics = input_rio.statistics(band, approx=True, clear_cache=True)
+                in_ranges.append((statistics.min, statistics.max))
+            except rasterio._err.CPLE_AppDefinedError:
+                statistics = input_rio.statistics(band, approx=False, clear_cache=True)
+                in_ranges.append((statistics.min, statistics.max))
     return tuple(in_ranges)
+
 
 
 def render_tile(render_tile_task: RenderTileTask):
@@ -149,10 +154,8 @@ def warp_bands(args):
 def calculate_inrange_bands(args):
     input_filename = args[0]
     bands = args[1]
-    threads = args[2]
     inrange_task = InRangeTask(input_filename=input_filename,
-                               bands=bands,
-                               threads=threads)
+                               bands=bands)
     return input_filename, bands, in_range_calculator(inrange_task)
 
 def transalte_bands_to_byte(args):

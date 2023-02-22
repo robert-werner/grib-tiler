@@ -171,9 +171,10 @@ def grib_tiler(input,
         input_filename = warped_band[0]
         band = warped_band[1]
         inrange_tasks.append(
-            [input_filename, band, threads]
+            [input_filename, band]
         )
-    bands_inranges = process_map(calculate_inrange_bands, iter(inrange_tasks), max_workers=threads, desc='Расчёт мин/макс значений')
+    print(inrange_tasks)
+    bands_inranges = process_map(calculate_inrange_bands, inrange_tasks, max_workers=threads, desc='Расчёт мин/макс значений')
     byte_bands_tasks = []
     for tile_output_directory, band_inranges in zip(tile_output_directories, bands_inranges):
         meta_json_filename = os.path.join(tile_output_directory, 'meta.json')
