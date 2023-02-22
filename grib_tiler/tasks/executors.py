@@ -1,7 +1,10 @@
 import os
+import time
+
 import numpy
 import numpy as np
 import rasterio
+from pyproj import CRS
 from rasterio.apps.translate import translate
 from rasterio.apps.warp import warp
 from rio_tiler.errors import TileOutsideBounds
@@ -9,6 +12,7 @@ from rio_tiler.io import Reader
 from rio_tiler.utils import render
 
 from grib_tiler.tasks import WarpTask, InRangeTask, RenderTileTask, TranslateTask
+
 
 
 def warp_raster(warp_task: WarpTask):
@@ -79,3 +83,49 @@ def translate_raster(translate_task: TranslateTask):
               scale=translate_task.scale,
               output_dtype=translate_task.output_dtype)
     return translate_task.output_filename
+
+def extract_band(args):
+    input_filename = args[0]
+    band = args[1]
+    output_directory = args[2]
+    filename = f'{os.path.splitext(input_filename)[0]}_{int(time.time())}.vrt'
+    output_filename = os.path.join(output_directory, filename)
+    translate_task = TranslateTask(input_filename=input_filename,
+                                   output_filename=output_filename,
+                                   band=band,
+                                   output_dtype=None)
+    return translate_raster(translate_task), band, output_directory
+
+def precut_bands(args):
+    input_filename = args[0]
+    band = args[1]
+    output_directory = args[2]
+    output_crs = 'EPSG:4326'
+    target_extent = CRS.from_epsg(4326).area_of_use.bounds,
+    target_extent_crs = 'EPSG:4326'
+    warp_task = WarpTask(input_filename=input_filename,
+                         output_directory=output_directory,
+                         output_crs=output_crs,
+                         target_extent=target_extent,
+                         target_extent_crs=target_extent_crs,
+                         output_format='VRT')
+    return warp_raster(warp_task), band, output_directory
+
+def warp_bands(args):
+    input_filename = args[0]
+    band = args[1]
+    output_directory = args[2]
+    output_crs = args[3]
+    target_extent = args[4]
+    target_extent_crs = args[5]
+    cutline_filename = args[6]
+    cutline_layer = args[7]
+    warp_task = WarpTask(input_filename=input_filename,
+                         output_directory=output_directory,
+                         output_crs=output_crs,
+                         target_extent=target_extent,
+                         target_extent_crs='EPSG:4326',
+                         cutline_filename=cutline_filename,
+                         cutline_layer_name=cutline_layer,
+                         output_format='VRT')
+    return warp_raster(warp_task), band, output_directory

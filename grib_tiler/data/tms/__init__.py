@@ -7,9 +7,8 @@ CUSTOM_TMS = {
     'EPSG:3575': morecantile.TileMatrixSet.custom(crs=CRS.from_epsg(3575), extent=[180.0 / 512,
                                                                                    -90.0 / 512,
                                                                                    -180.0 / 512,
-                                                                                   90.0 / 512],
-                                                  extent_crs=CRS.from_epsg(4326)),
-    'EPSG:4326': morecantile.tms.get('WGS1984Quad')
+                                                                                       90.0 / 512],
+                                                  extent_crs=CRS.from_epsg(4326))
 }
 
 
@@ -24,4 +23,4 @@ def load_tms(output_crs):
             crs=crs,
             extent_crs=CRS.from_epsg(4326)
         )
-    return tms, crs_name
+    return tms, crs_name, crs

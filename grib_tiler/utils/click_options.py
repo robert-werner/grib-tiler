@@ -1,8 +1,4 @@
-from cloup import option, argument, Path, Choice
-
-from cloup.constraints import constraint, all_or_none, If, RequireExactly, mutually_exclusive, require_all, IsSet, Equal
-from rasterio.rio.options import bounds_handler
-
+from click import option, argument, Path, Choice
 from grib_tiler.utils.click_handlers import cpu_count_handler, crs_handler
 
 multiband_opt = option(
@@ -59,7 +55,7 @@ tile_dimension_opt = option(
 
 out_crs_opt = option('--out-crs',
                            'output_crs',
-                           default=None,
+                           default='EPSG:3857',
                            callback=crs_handler,
                            help="Выходная система координат тайлов.")
 
@@ -79,7 +75,7 @@ nodata_opt = option(
 zooms_opt = option(
     '--zooms',
     type=str,
-    default=None,
+    default='0-4',
     help='Значение (значения) увеличения (zoom) для генерации тайлов.'
 )
 
@@ -98,7 +94,3 @@ isolines_generate_opt = option(
     default=None,
     help='Генерировать изолинии'
 )
-
-multiband_predicate = IsSet('multiband') & ~IsSet('band_numbers')
-
-multiband_constraint = constraint(If(multiband_predicate, then=RequireExactly(2)), ['multiband', 'band_numbers'])

@@ -5,4 +5,3 @@ morecantile
 tqdm
 git+http://dev.modext.ru:8929/dcc5/rasterio.git@meteoctx
 rio-tiler
-cloup

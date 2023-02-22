@@ -59,7 +59,6 @@ def abspath_forward_slashes(path):
     return '/'.join(os.path.abspath(path).split(os.path.sep))
 
 def files_in_handler(ctx, param, value):
-    print(param, value)
     """Process and validate input file names"""
     return tuple(file_in_handler(ctx, param, item) for item in value)
 
