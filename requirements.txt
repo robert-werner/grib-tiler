@@ -8,3 +8,4 @@ rio-tiler
 parallelbar
 pytz
 pyrfc3339
+fiona

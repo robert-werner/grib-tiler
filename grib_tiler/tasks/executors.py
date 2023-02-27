@@ -2,10 +2,14 @@ import multiprocessing
 import os
 import random
 
+import fiona
+from fiona.transform import transform_geom
+from shapely.geometry import shape
 import numpy
 import numpy as np
 import rasterio
 from pyproj import CRS
+from rasterio.apps.contour import build_contour
 from rasterio.apps.translate import translate
 from rasterio.apps.warp import warp
 from rasterio.apps.vrt import build_vrt
@@ -14,7 +18,9 @@ from rio_tiler.errors import TileOutsideBounds
 from rio_tiler.io import Reader
 from rio_tiler.utils import render
 
-from grib_tiler.tasks import WarpTask, InRangeTask, RenderTileTask, TranslateTask, VirtualTask
+from grib_tiler.tasks import WarpTask, InRangeTask, RenderTileTask, TranslateTask, VirtualTask, IsolinesTask
+from grib_tiler.utils import fiona_bbox
+
 
 def concatenate_raster(virtual_task: VirtualTask):
     return build_vrt(source_filenames=virtual_task.input_filename,
@@ -108,6 +114,11 @@ def render_tile(render_tile_task: RenderTileTask):
         tile_file.write(tile_bytes)
 
 
+def isolines_from_band(isolines_task: IsolinesTask):
+    return build_contour(source_raster_filename=isolines_task.input_filename,
+                         output_vector_filename=isolines_task.output_filename)
+
+
 def translate_raster(translate_task: TranslateTask):
     return translate(source_filename=translate_task.input_filename,
               dest_filename=translate_task.output_filename,
@@ -131,6 +142,43 @@ def vrt_to_raster(args):
 def calculate_band_minmax(args):
     input_filename = args
     return min_max(input_filename)
+
+def extract_isoline_properties(feature):
+    isoline = {
+        "value": None,
+        "bbox": None,
+        "points": []
+    }
+    for x, y in feature["geometry"]["coordinates"]:
+        isoline["points"].append(x)
+        isoline["points"].append(y)
+    isoline["bbox"] = list(fiona_bbox(feature))
+    isoline["value"] = int(feature["properties"]["ELEV"])
+    return isoline
+
+
+def band_isolines(args):
+    isolines_json = {
+        "isoline": [
+
+        ]
+    }
+    input_filename = args[0]
+    output_directory = args[1]
+    filename = f'{os.path.splitext(input_filename)[0]}_isolines_{int(random.randint(0, 1000000))}.gpkg'
+    output_filename = os.path.join(output_directory, filename)
+    isolines_task = IsolinesTask(input_filename=input_filename,
+                                 output_filename=output_filename)
+    isolines_filename = isolines_from_band(isolines_task)
+    with fiona.open(isolines_filename) as isolines_vds:
+        with multiprocessing.Pool(os.cpu_count()) as isoline_extract_pool:
+            for result in isoline_extract_pool.map(extract_isoline_properties, isolines_vds):
+                isolines_json["isoline"].append(result)
+    return isolines_json
+
+
+
+
 
 def warp_band(args):
     input_filename = args[0]

@@ -106,9 +106,10 @@ bands_list_opt = option(
     help="Каналы входного изображения для генерации тайлов.")
 
 isolines_generate_opt = option(
-    '-il',
+    '--il',
     '--isolines',
     'generate_isolines',
-    default=None,
+    is_flag=True,
+    default=False,
     help='Генерировать изолинии'
 )

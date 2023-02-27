@@ -4,6 +4,20 @@ import pytz
 import rasterio
 from pyrfc3339.generator import generate
 
+def explode(coords):
+    """Explode a GeoJSON geometry's coordinates object and yield coordinate tuples.
+    As long as the input is conforming, the type of the geometry doesn't matter."""
+    for e in coords:
+        if isinstance(e, (float, int)):
+            yield coords
+            break
+        else:
+            for f in explode(e):
+                yield f
+
+def fiona_bbox(f):
+    x, y = zip(*list(explode(f['geometry']['coordinates'])))
+    return min(x), min(y), max(x), max(y)
 
 def get_rfc3339nano_time():
     return generate(datetime.now().replace(tzinfo=pytz.utc), microseconds=True)

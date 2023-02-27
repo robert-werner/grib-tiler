@@ -1,0 +1,1 @@
+{"type":"FeatureCollection","name":"equator","features":[{"type":"Feature","properties":{"name":null},"geometry":{"type":"Polygon","coordinates":[[[180.0,0.0],[180.0,90.0],[-180.0,90.0],[-180.0,0.0],[180.0,0.0]]]}}]}

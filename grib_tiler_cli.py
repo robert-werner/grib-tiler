@@ -15,7 +15,7 @@ from pyproj import CRS
 from grib_tiler.data.tms import load_tms
 from grib_tiler.tasks import RenderTileTask
 from grib_tiler.tasks.executors import extract_band, warp_band, calculate_band_minmax, transalte_bands_to_byte, \
-    concatenate_bands, vrt_to_raster, render_tile
+    concatenate_bands, vrt_to_raster, render_tile, band_isolines
 from grib_tiler.utils import click_options, get_rfc3339nano_time
 
 warnings.filterwarnings("ignore")
@@ -44,6 +44,7 @@ META_INFO = {
 @click_options.threads_opt
 @click_options.tilesize
 @click_options.image_format_opt
+@click_options.isolines_generate_opt
 def grib_tiler(input_files,
                output_directory,
                cutline_filename,
@@ -54,7 +55,8 @@ def grib_tiler(input_files,
                output_crs,
                threads,
                tilesize,
-               image_format):
+               image_format,
+               generate_isolines):
     tms = load_tms(output_crs)
 
     input_pack = None
@@ -143,6 +145,46 @@ def grib_tiler(input_files,
             meta_infos = [meta_info]
         echo({"level": "info", "time": get_rfc3339nano_time(),
                   "msg": f"Вычисление мин/макс каналов... ОК"})
+    output_directories = []
+    if is_multiband:
+        os.makedirs(output_directory, exist_ok=True)
+        output_directories.append(output_directory)
+        meta_json_filename = os.path.join(output_directory, 'meta.json')
+        with open(meta_json_filename, 'w') as meta_json:
+            json.dump(meta_infos[0], meta_json, indent=4)
+    else:
+        for idx, band in enumerate(bands_list):
+            band_tiles_output_directory = os.path.join(output_directory, str(band))
+            os.makedirs(band_tiles_output_directory, exist_ok=True)
+            output_directories.append(band_tiles_output_directory)
+            meta_json_filename = os.path.join(band_tiles_output_directory, 'meta.json')
+            with open(meta_json_filename, 'w') as meta_json:
+                json.dump(meta_infos[idx], meta_json, indent=4)
+
+    if generate_isolines:
+        band_isolines_list = []
+        isolines_generation_progress = 0
+        echo({"level": "info", "time": get_rfc3339nano_time(),
+              "msg": f"Генерация изолиний..."})
+        isolines_tasks = list(zip(warped_extracts, [TEMP_DIR.name] * len(warped_extracts)))
+        for isoline_task in isolines_tasks:
+            isoline = band_isolines(isoline_task)
+            band_isolines_list.append(isoline)
+            isolines_generation_progress += band_progress_step
+            echo({"level": "info", "time": get_rfc3339nano_time(),
+                  "msg": f"Генерация изолиний... {isolines_generation_progress}%"})
+
+        if is_multiband:
+            for band_isoline, band in zip(band_isolines_list, bands_list):
+                with open(os.path.join(output_directories[0], f'{str(band)}_isoline.json'), 'w') as isoline_json:
+                    json.dump(band_isoline, isoline_json)
+        else:
+            for output_directory, band_isoline in zip(output_directories, band_isolines_list):
+                with open(os.path.join(output_directory, f'isoline.json'), 'w') as isoline_json:
+                    json.dump(band_isoline, isoline_json, indent=4)
+        echo({"level": "info", "time": get_rfc3339nano_time(),
+              "msg": f"Генерация изолиний... OK"})
+
     with multiprocessing.Pool(threads) as byte_conv_pool:
         byte_conv_progress = 0
         echo({"level": "info", "time": get_rfc3339nano_time(),
@@ -179,22 +221,7 @@ def grib_tiler(input_files,
         render_tiles_quantity = len(tiles) * len(bands_list)
     render_tiles_progress_step = 100 / render_tiles_quantity
     with multiprocessing.Pool(threads) as render_tile_pool:
-        output_directories = []
         render_tile_tasks = []
-        if is_multiband:
-            os.makedirs(output_directory, exist_ok=True)
-            output_directories.append(output_directory)
-            meta_json_filename = os.path.join(output_directory, 'meta.json')
-            with open(meta_json_filename, 'w') as meta_json:
-                json.dump(meta_infos[0], meta_json, indent=4)
-        else:
-            for idx, band in enumerate(bands_list):
-                band_tiles_output_directory = os.path.join(output_directory, str(band))
-                os.makedirs(band_tiles_output_directory, exist_ok=True)
-                output_directories.append(band_tiles_output_directory)
-                meta_json_filename = os.path.join(band_tiles_output_directory, 'meta.json')
-                with open(meta_json_filename, 'w') as meta_json:
-                    json.dump(meta_infos[idx], meta_json, indent=4)
         echo({"level": "info", "time": get_rfc3339nano_time(),
               "msg": f"Генерация задач на тайлирование изображений..."}) # TODO: сделать всё это в _ленивом_ итерировании (tiles)
         tiling_task_generation_progress = 0

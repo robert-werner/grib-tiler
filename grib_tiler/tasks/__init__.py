@@ -116,6 +116,9 @@ class TranslateTask(Task):
         self.scale = scale
         self.output_dtype = output_dtype
 
+class IsolinesTask(Task):
+
+    ...
 
 class VirtualTask(Task):
 
