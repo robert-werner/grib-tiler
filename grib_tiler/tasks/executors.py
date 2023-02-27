@@ -88,9 +88,22 @@ def render_tile(render_tile_task: RenderTileTask):
             tile_bytes = tile.render(img_format=render_tile_task.image_format)
             del tile
         except TileOutsideBounds:
-            tile_bytes = render(data=numpy.zeros(
-                shape=(len(input_file_rio.dataset.indexes), render_tile_task.tilesize, render_tile_task.tilesize),
-                dtype='uint8'), img_format=render_tile_task.image_format)
+            if render_tile_task.image_format == 'JPEG':
+                if len(render_tile_task.bands) == 2:
+                    tile_bytes = render(data=numpy.zeros(
+                        shape=(
+                        3, render_tile_task.tilesize, render_tile_task.tilesize),
+                        dtype='uint8'), img_format=render_tile_task.image_format)
+                else:
+                    tile_bytes = render(data=numpy.zeros(
+                        shape=(
+                            len(input_file_rio.dataset.indexes), render_tile_task.tilesize, render_tile_task.tilesize),
+                        dtype='uint8'), img_format=render_tile_task.image_format)
+            else:
+                tile_bytes = render(data=numpy.zeros(
+                    shape=(
+                        len(input_file_rio.dataset.indexes), render_tile_task.tilesize, render_tile_task.tilesize),
+                    dtype='uint8'), img_format=render_tile_task.image_format)
     with open(render_tile_task.output_filename, 'wb') as tile_file:
         tile_file.write(tile_bytes)
 

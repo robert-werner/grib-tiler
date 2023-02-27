@@ -56,7 +56,8 @@ class RenderTileTask(Task):
                  dtype='uint8',
                  image_format='PNG',
                  subdirectory_name=None,
-                 nodata_mask_array=None):
+                 nodata_mask_array=None,
+                 bands=None):
         super().__init__(input_filename=input_filename, output_directory=output_directory)
         self.z = z
         self.x = x
@@ -67,6 +68,7 @@ class RenderTileTask(Task):
         self.dtype = dtype
         self.image_format = image_format
         self.subdirectory_name = subdirectory_name
+        self.bands = bands
         if self.subdirectory_name:
             self.output_directory = os.path.join(self.output_directory, self.subdirectory_name)
         tile_directory = os.path.join(self.output_directory, str(self.z), str(self.x))
@@ -91,14 +93,6 @@ class RenderTileTask(Task):
     def nodata_mask(self):
         if isinstance(self._nodata_mask, np.ndarray):
             return self._nodata_mask
-
-    @property
-    def bands(self):
-        with rasterio.open(self.input_filename) as input_rio_ds:
-            indexes = list(range(1, len(input_rio_ds.indexes) + 1))
-            if len(indexes) == 1:
-                indexes = indexes[0]
-        return indexes
 
 
 class InRangeTask(Task):

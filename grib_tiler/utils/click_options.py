@@ -55,7 +55,7 @@ image_format_opt = option(
     '--f',
     '--format',
     'image_format',
-    default='PNG',
+    default='JPEG',
     type=Choice([
         'PNG', 'JPEG', 'GTIFF'
     ]),

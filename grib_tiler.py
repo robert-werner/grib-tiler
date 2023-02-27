@@ -80,6 +80,7 @@ def grib_tiler(input_files,
                               bands_list,
                               [TEMP_DIR.name] * len(input_files)))
     else:
+        echo({"level": "info", "time": get_rfc3339nano_time(), "msg": "Тип выходных тайлов: одноканальный"})
         if len(input_files) >= 2:
             echo({"level": "fatal", "time": get_rfc3339nano_time(), "msg": "Использование двух и более входных файлов в одноканальном режиме недоступно"})
             raise UsageError('Использование двух и более входных файлов в одноканальном режиме недоступно')
@@ -150,7 +151,7 @@ def grib_tiler(input_files,
         byte_conv_tasks = list(zip(warped_extracts, [[warped_minmax_elem] for warped_minmax_elem in warped_minmax], [TEMP_DIR.name] * len(bands_list)))
         for result in byte_conv_pool.map(transalte_bands_to_byte, byte_conv_tasks):
             byte_conv_progress += band_progress_step
-            # echo({"level": "info", "time": get_rfc3339nano_time(), "msg": f"Конверсия извлечённых каналов в 8-битные изображения... {int(byte_conv_progress)}%"})
+            echo({"level": "info", "time": get_rfc3339nano_time(), "msg": f"Конверсия извлечённых каналов в 8-битные изображения... {int(byte_conv_progress)}%"})
             byte_converted.append(result)
         echo({"level": "info", "time": get_rfc3339nano_time(),
               "msg": f"Конверсия извлечённых каналов в 8-битные изображения... ОК"})
@@ -162,7 +163,7 @@ def grib_tiler(input_files,
         tiling_source_file_vrt = concatenate_bands(concatenate_args)
         tiling_source_file = vrt_to_raster([tiling_source_file_vrt, TEMP_DIR.name])
         tiling_source_files.append(tiling_source_file)
-        # echo({"level": "info", "time": get_rfc3339nano_time(), "msg": f"Объединение и рендеринг 8-битных изображений... OK"})
+        echo({"level": "info", "time": get_rfc3339nano_time(), "msg": f"Объединение и рендеринг 8-битных изображений... OK"})
         render_tiles_quantity = len(tiles)
     else:
         with multiprocessing.Pool(threads) as vrt_to_raster_pool:
@@ -171,7 +172,7 @@ def grib_tiler(input_files,
                   "msg": f"Рендеринг 8-битных изображений..."})
             for result in vrt_to_raster_pool.map(vrt_to_raster, list(zip(byte_converted, [TEMP_DIR.name] * len(bands_list)))):
                 vrt_to_raster_progress += band_progress_step
-                # echo({"level": "info", "time": get_rfc3339nano_time(), "msg": f"Рендеринг 8-битных изображений... {int(vrt_to_raster_progress)}%"})
+                echo({"level": "info", "time": get_rfc3339nano_time(), "msg": f"Рендеринг 8-битных изображений... {int(vrt_to_raster_progress)}%"})
                 tiling_source_files.append(result)
             echo({"level": "info", "time": get_rfc3339nano_time(),
                   "msg": f"Рендеринг 8-битных изображений... OK"})
@@ -201,7 +202,7 @@ def grib_tiler(input_files,
             for band, band_output_directory, tiling_source_file in zip(bands_list, output_directories,
                                                                        tiling_source_files):
                 tiling_task_generation_progress += render_tiles_progress_step
-                # echo({"level": "info", "time": get_rfc3339nano_time(), "msg": f"Генерация задач на тайлирование изображений... {int(tiling_task_generation_progress)}%"})
+                echo({"level": "info", "time": get_rfc3339nano_time(), "msg": f"Генерация задач на тайлирование изображений... {int(tiling_task_generation_progress)}%"})
                 nodata_mask = None
                 if len(bands_list) > 4 and is_multiband:
                     image_format = 'GTIFF'
@@ -217,7 +218,8 @@ def grib_tiler(input_files,
                         tms=tms,
                         tilesize=tilesize,
                         image_format=image_format,
-                        nodata_mask_array=nodata_mask
+                        nodata_mask_array=nodata_mask,
+                        bands=bands_list
                     )
                 )
         tiling_progress = 0
@@ -227,9 +229,10 @@ def grib_tiler(input_files,
               "msg": f"Тайлирование изображений..."})
         for result in render_tile_pool.map(render_tile, render_tile_tasks):
             tiling_progress += render_tiles_progress_step
-            # echo({"level": "info", "time": get_rfc3339nano_time(), "msg": f"Тайлирование изображений... {int(tiling_progress)}%"})
+            echo({"level": "info", "time": get_rfc3339nano_time(), "msg": f"Тайлирование изображений... {int(tiling_progress)}%"})
         echo({"level": "info", "time": get_rfc3339nano_time(),
               "msg": f"Тайлирование изображений... OK"})
+        TEMP_DIR.cleanup()
 
 
 
