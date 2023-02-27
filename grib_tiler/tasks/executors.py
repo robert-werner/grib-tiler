@@ -9,6 +9,7 @@ from pyproj import CRS
 from rasterio.apps.translate import translate
 from rasterio.apps.warp import warp
 from rasterio.apps.vrt import build_vrt
+from rasterio.cutils.min_max import min_max
 from rio_tiler.errors import TileOutsideBounds
 from rio_tiler.io import Reader
 from rio_tiler.utils import render
@@ -16,10 +17,9 @@ from rio_tiler.utils import render
 from grib_tiler.tasks import WarpTask, InRangeTask, RenderTileTask, TranslateTask, VirtualTask
 
 def concatenate_raster(virtual_task: VirtualTask):
-    build_vrt(src_ds=virtual_task.input_filename,
-              dst_ds=virtual_task.output_filename,
-              resample_algo='bilinear')
-    return virtual_task.output_filename
+    return build_vrt(source_filenames=virtual_task.input_filename,
+                     dest_filename=virtual_task.output_filename,
+                     resample_algorithm='bilinear')
 
 def warp_raster(warp_task: WarpTask):
     return warp(
@@ -68,9 +68,6 @@ def in_range_calculator(inrange_task: InRangeTask):
 
 
 def render_tile(render_tile_task: RenderTileTask):
-    os.makedirs(os.path.join(render_tile_task.output_directory,
-                             str(render_tile_task.z), str(render_tile_task.x)),
-                exist_ok=True)
     with Reader(input=render_tile_task.input_filename,
                 tms=render_tile_task.tms) as input_file_rio:
         try:
@@ -78,10 +75,11 @@ def render_tile(render_tile_task: RenderTileTask):
                                        tile_y=render_tile_task.y,
                                        tile_x=render_tile_task.x,
                                        tilesize=render_tile_task.tilesize,
-                                       nodata=render_tile_task.nodata,
-                                       indexes=render_tile_task.bands)
+                                       resampling_method='bilinear')
             if isinstance(render_tile_task.nodata_mask, np.ndarray):
                 tile.mask = render_tile_task.nodata_mask
+            if tile.data.shape[0] > 4:
+                render_tile_task.image_format = 'GTIFF'
             if render_tile_task.image_format == 'JPEG':
                 if tile.data.shape[0] == 2:
                     tile_mask = numpy.reshape(numpy.expand_dims(tile.mask, axis=-1), (1, render_tile_task.tilesize,
@@ -105,6 +103,21 @@ def translate_raster(translate_task: TranslateTask):
               min_max_list=translate_task.scale,
               resample_algorithm='bilinear',
               output_dtype=translate_task.output_dtype)
+
+def vrt_to_raster(args):
+    input_filename = args[0]
+    output_directory = args[1]
+    filename = f'{os.path.splitext(input_filename)[0]}_{int(random.randint(0, 1000000))}.tiff'
+    output_filename = os.path.join(output_directory, filename)
+    translate_task = TranslateTask(input_filename=input_filename,
+                                   output_filename=output_filename,
+                                   output_format='GTiff',
+                                   output_dtype='Byte')
+    return translate_raster(translate_task)
+
+def calculate_band_minmax(args):
+    input_filename = args
+    return min_max(input_filename)
 
 def warp_band(args):
     input_filename = args[0]
@@ -197,7 +210,7 @@ def transalte_bands_to_byte(args):
     input_filename = args[0]
     scale = args[1]
     output_directory = args[2]
-    filename = f'{os.path.splitext(input_filename)[0]}_byte.tiff'
+    filename = f'{os.path.splitext(input_filename)[0]}_byte.vrt'
     output_filename = os.path.join(output_directory, filename)
     translate_task = TranslateTask(input_filename=input_filename,
                                    output_filename=output_filename,
@@ -206,10 +219,10 @@ def transalte_bands_to_byte(args):
     return translate_raster(translate_task)
 
 def concatenate_bands(args):
-    input_filename = args[0]
+    input_filenames = args[0]
     output_directory = args[1]
     filename = f'{str(random.randint(0, 1000000))}_conc.vrt'
     output_filename = os.path.join(output_directory, filename)
-    vrt_task = VirtualTask(input_filename=input_filename,
+    vrt_task = VirtualTask(input_filename=input_filenames,
                            output_filename=output_filename)
     return concatenate_raster(vrt_task)

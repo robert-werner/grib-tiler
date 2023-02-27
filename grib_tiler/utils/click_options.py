@@ -51,17 +51,17 @@ file_out_arg = argument(
     required=True,
     type=Path(resolve_path=True, file_okay=False))
 
-img_format_opt = option(
-    '-f',
+image_format_opt = option(
+    '--f',
     '--format',
     'image_format',
     default='PNG',
     type=Choice([
-        'PNG', 'JPEG', 'TIFF'
+        'PNG', 'JPEG', 'GTIFF'
     ]),
     help='Выходной формат тайлов.')
 
-tile_dimension_opt = option(
+tilesize = option(
     '--tilesize',
     "tilesize",
     nargs=1,

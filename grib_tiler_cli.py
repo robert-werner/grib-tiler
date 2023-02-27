@@ -37,10 +37,10 @@ META_INFO = {
 @click_options.files_in_arg
 @click_options.file_out_arg
 @click_options.bands_opt
-@click_options.img_format_opt
+@click_options.image_format_opt
 @click_options.cutline_filename_opt
 @click_options.cutline_layer_opt
-@click_options.tile_dimension_opt
+@click_options.tilesize
 @click_options.output_crs_opt
 @click_options.threads_opt
 @click_options.zooms_list_opt

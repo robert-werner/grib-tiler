@@ -167,20 +167,20 @@ def band_handler(ctx, param, value):
     if '..' in value:
         start, stop = map(
             lambda x: int(x) if x else None, value.split('..'))
-        if start is None:
+        if start is None or start == 0:
             start = 1
         band_indexes.extend(list(map(str,
                               list(range(start, stop + 1)))))
     elif '-' in value:
         start, stop = map(
             lambda x: int(x) if x else None, value.split('-'))
-        if start is None:
+        if start is None or start == 0:
             start = 1
-        band_indexes.extend(list(map(str,
+        band_indexes.extend(list(map(int,
                               list(range(start, stop + 1)))))
     elif ',' in value:
         band_indexes.extend(list(map(
-            lambda x: x if x else None, value.split(','))))
+            lambda x: int(x) if x else None, value.split(','))))
     else:
         try:
             int(value)
@@ -197,5 +197,11 @@ def band_handler(ctx, param, value):
             Остальные форматы недопустимы.
             ''')
         else:
-            band_indexes = [str(value)]
-    return ",".join(band_indexes)
+            value = int(value)
+            if value == 0:
+                value += 1
+            band_indexes = [value]
+    for idx, band_index in enumerate(band_indexes):
+        if band_index == 0:
+            band_indexes[idx] += 1
+    return ",".join(list(map(str, band_indexes)))

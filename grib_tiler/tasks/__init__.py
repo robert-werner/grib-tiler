@@ -69,6 +69,8 @@ class RenderTileTask(Task):
         self.subdirectory_name = subdirectory_name
         if self.subdirectory_name:
             self.output_directory = os.path.join(self.output_directory, self.subdirectory_name)
+        tile_directory = os.path.join(self.output_directory, str(self.z), str(self.x))
+        os.makedirs(tile_directory, exist_ok=True)
         self.output_filename = os.path.join(self.output_directory, str(self.z), str(self.x),
                                             f'{self.y}{self.get_raster_extension(self.image_format)}')
         self._nodata_mask = nodata_mask_array
