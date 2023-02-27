@@ -170,7 +170,7 @@ def extract_band(args):
     input_filename = args[0]
     band = args[1]
     output_directory = args[2]
-    filename = f'{os.path.splitext(input_filename)[0]}_{int(random.randint(0, 1000000))}.vrt'
+    filename = f'{os.path.splitext(input_filename)[0].replace(" ", "_")}_{int(random.randint(0, 1000000))}.vrt'
     output_filename = os.path.join(output_directory, filename)
     translate_task = TranslateTask(input_filename=input_filename,
                                    output_filename=output_filename,

@@ -158,8 +158,10 @@ def zoom_handler(ctx, param, value):
                             Остальные форматы недопустимы.
                             ''')
         else:
-            if value < 0 or value > 24:
+            _value = int(value)
+            if _value < 0 or _value > 24:
                 raise click.BadParameter('Поддерживаются только уровни увеличения с 0 по 24 (включительно).')
+            zooms.append(str(_value))
     return ",".join(zooms)
 
 def band_handler(ctx, param, value):
@@ -200,7 +202,7 @@ def band_handler(ctx, param, value):
             value = int(value)
             if value == 0:
                 value += 1
-            band_indexes = [value]
+            band_indexes.append(str(value))
     for idx, band_index in enumerate(band_indexes):
         if band_index == 0:
             band_indexes[idx] += 1

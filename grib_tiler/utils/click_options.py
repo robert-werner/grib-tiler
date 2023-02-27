@@ -98,7 +98,7 @@ zooms_list_opt = option(
 )
 
 bands_list_opt = option(
-    '--bands',
+    '--band',
     'bands_list',
     default='1',
     callback=band_handler,
