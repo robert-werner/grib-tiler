@@ -26,10 +26,8 @@ EPSG_4326 = CRS.from_epsg(4326)
 EPSG_4326_BOUNDS = list(EPSG_4326.area_of_use.bounds)
 
 META_INFO = {
-    "meta": {
-        "common": [
+"common": [
         ]
-    }
 }
 
 @command(short_help='Генератор растровых тайлов из GRIB(2)-файлов.')
@@ -125,16 +123,16 @@ def grib_tiler(input_files,
             echo({"level": "info", "time": get_rfc3339nano_time(),
                   "msg": f"Вычисление мин/макс каналов... {int(in_range_calc_progress)}%"})
             warped_minmax.append(result)
-            meta_info['meta']['common'].append(
+            meta_info['common'].append(
                 {
                   'step': (result[1] - result[0]) / 255,
                   'min': result[0]
                 }
             )
         if not is_multiband:
-            for step_min in meta_info['meta']['common']:
+            for step_min in meta_info['common']:
                 meta_info = deepcopy(META_INFO)
-                meta_info['meta']['common'].append({
+                meta_info['common'].append({
                     'step': step_min['step'],
                     'min': step_min['min']
                 })
