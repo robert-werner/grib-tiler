@@ -22,21 +22,20 @@ def concatenate_raster(virtual_task: VirtualTask):
     return virtual_task.output_filename
 
 def warp_raster(warp_task: WarpTask):
-    warp(
-        src_ds=warp_task.input_filename,
-        dst_ds=warp_task.output_filename,
+    return warp(
+        source_filename=warp_task.input_filename,
+        dest_filename=warp_task.output_filename,
         output_crs=warp_task.output_crs,
-        multi=warp_task.multithreading,
-        cutline_fn=warp_task.cutline_filename,
-        resample_algo='bilinear',
+        multi_mode=warp_task.multithreading,
+        cutline_filename=warp_task.cutline_filename,
+        resample_algorithm='bilinear',
         cutline_layer=warp_task.cutline_layer_name,
         output_format=warp_task.output_format,
-        src_nodata=warp_task.source_nodata,
-        dst_nodata=warp_task.destination_nodata,
-        write_flush=warp_task.write_flush,
-        target_extent=warp_task.target_extent,
+        source_nodata=warp_task.source_nodata,
+        dest_nodata=warp_task.destination_nodata,
+        flush_to_disk=warp_task.write_flush,
+        target_extent_bbox=warp_task.target_extent,
         target_extent_crs=warp_task.target_extent_crs)
-    return warp_task.output_filename
 
 def _inrange_calculator(rio_ds, band):
     with rasterio.open(rio_ds) as rio_ds:
@@ -99,14 +98,47 @@ def render_tile(render_tile_task: RenderTileTask):
 
 
 def translate_raster(translate_task: TranslateTask):
-    translate(src_ds=translate_task.input_filename,
-              dst_ds=translate_task.output_filename,
-              bands=translate_task.bands,
+    return translate(source_filename=translate_task.input_filename,
+              dest_filename=translate_task.output_filename,
+              bands_list=translate_task.bands,
               output_format=translate_task.output_format,
-              scale=translate_task.scale,
-              resample_algo='bilinear',
+              min_max_list=translate_task.scale,
+              resample_algorithm='bilinear',
               output_dtype=translate_task.output_dtype)
-    return translate_task.output_filename
+
+def warp_band(args):
+    input_filename = args[0]
+    output_crs = args[1]
+    output_crs_bounds = args[2]
+    cutline_filename = args[3]
+    cutline_layer = args[4]
+    output_directory = args[5]
+    if cutline_filename:
+        warp_task = WarpTask(input_filename=input_filename,
+                             output_directory=output_directory,
+                             output_crs=output_crs,
+                             target_extent=None,
+                             target_extent_crs=None,
+                             cutline_filename=cutline_filename,
+                             cutline_layer_name=cutline_layer,
+                             output_format='VRT')
+    else:
+        if output_crs == 'EPSG:3857':
+            warp_task = WarpTask(input_filename=input_filename,
+                                 output_directory=output_directory,
+                                 output_crs='EPSG:4326',
+                                 target_extent=(-180.0, -90.0, 180.0, 90.0),
+                                 target_extent_crs='EPSG:4326',
+                                 output_format='VRT')
+            input_filename = warp_raster(warp_task)
+        warp_task = WarpTask(input_filename=input_filename,
+                             output_directory=output_directory,
+                             output_crs=output_crs,
+                             target_extent=output_crs_bounds,
+                             target_extent_crs='EPSG:4326',
+                             output_format='VRT')
+
+    return warp_raster(warp_task)
 
 def extract_band(args):
     input_filename = args[0]
@@ -118,7 +150,7 @@ def extract_band(args):
                                    output_filename=output_filename,
                                    band=band,
                                    output_dtype=None)
-    return translate_raster(translate_task), band, output_directory
+    return translate_raster(translate_task)
 
 def precut_bands(args):
     input_filename = args[0]

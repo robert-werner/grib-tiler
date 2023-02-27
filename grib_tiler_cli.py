@@ -6,7 +6,6 @@ import time
 import warnings
 from copy import deepcopy
 
-import click
 import mercantile
 import rasterio
 from click import echo, UsageError, command
@@ -39,12 +38,12 @@ META_INFO = {
 @click_options.file_out_arg
 @click_options.bands_opt
 @click_options.img_format_opt
-@click_options.cutline_opt
+@click_options.cutline_filename_opt
 @click_options.cutline_layer_opt
 @click_options.tile_dimension_opt
-@click_options.out_crs_opt
+@click_options.output_crs_opt
 @click_options.threads_opt
-@click_options.zooms_opt
+@click_options.zooms_list_opt
 @click_options.multiband_opt
 def grib_tiler(input,
                output,

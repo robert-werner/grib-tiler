@@ -1,11 +1,12 @@
 import multiprocessing
 import os
-import re
 
 import click
 import rasterio
-from rasterio.rio.options import from_like_context
 from rasterio._path import _parse_path, _UnparsedPath
+from pyproj import CRS
+
+from grib_tiler.utils import get_rfc3339nano_time
 
 
 def zooms_handler(value):
@@ -62,6 +63,9 @@ def files_in_handler(ctx, param, value):
     """Process and validate input file names"""
     return tuple(file_in_handler(ctx, param, item) for item in value)
 
+def grib_handler(ctx, param, value):
+    return value
+
 def file_in_handler(ctx, param, value):
     """Normalize ordinary filesystem and VFS paths"""
     try:
@@ -97,26 +101,101 @@ def file_in_handler(ctx, param, value):
 
 def cpu_count_handler(ctx, param, value):
     if value > multiprocessing.cpu_count():
+        click.echo({"level": "fatal", "time": get_rfc3339nano_time(), "msg": "Входное количество потоков не может превышать количество существующих потоков"})
         raise click.BadParameter('Входное количество потоков не может превышать количество существующих потоков')
     return value
 
 
 def crs_handler(ctx, param, value):
-    return value
-
-
-def bounds_handler(ctx, param, value):
-    """Handle different forms of bounds."""
-    retval = from_like_context(ctx, param, value)
-    if retval is None and value is not None:
-        try:
-            value = value.strip(', []')
-            retval = tuple(float(x) for x in re.split(r'[,\s]+', value))
-            assert len(retval) == 4
-            return retval
-        except Exception:
+    crs_def = None # PureC-style костыль, на стороне PyPROJ
+    crs_def = CRS.from_user_input(value) # TODO: пулл-реквест в pyproj для возвращения None-значения при отсутствии определения СК
+    if not crs_def:
+        click.echo({"level": "fatal", "time": get_rfc3339nano_time(), "msg": "Поддерживаются системы координат только из EPSG-базы данных (см. https://epsg.org/)"})
+        raise click.BadParameter('Поддерживаются системы координат только из EPSG-базы данных (см. https://epsg.org/)')
+    else:
+        epsg_auth = crs_def.to_epsg()
+        if not epsg_auth:
+            click.echo({"level": "fatal", "time": get_rfc3339nano_time(),
+                        "msg": "Поддерживаются системы координат только из EPSG-базы данных (см. https://epsg.org/)"})
             raise click.BadParameter(
-                "{0!r} is not a valid bounding box representation".format(
-                    value))
-    else:  # pragma: no cover
-        return retval
+                'Поддерживаются системы координат только из EPSG-базы данных (см. https://epsg.org/)')
+    return ":".join(crs_def.to_authority(auth_name='EPSG'))
+
+def zoom_handler(ctx, param, value):
+    zooms = []
+    if '..' in value:
+        start, stop = map(
+            lambda x: int(x) if x else None, value.split('..'))
+        if start is None:
+            start = 1
+        zooms.extend(list(map(str,
+                              list(range(start, stop + 1)))))
+    elif '-' in value:
+        start, stop = map(
+            lambda x: int(x) if x else None, value.split('-'))
+        if start is None:
+            start = 1
+        zooms.extend(list(map(str,
+                              list(range(start, stop + 1)))))
+    elif ',' in value:
+        zooms.extend(list(map(
+            lambda x: x if x else None, value.split(','))))
+    else:
+        try:
+            int(value)
+        except ValueError:
+            click.echo({"level": "fatal", "time": get_rfc3339nano_time(),
+                        "msg": "Недопустимый формат ввода уровней увеличения"})
+
+            raise click.BadParameter('''
+                            Допустимые форматы ввода уровней увеличения:
+
+                            1) 0..4
+                            2) 0-4
+                            3) 0,1,2,3,4
+                            4) 0
+
+                            Остальные форматы недопустимы.
+                            ''')
+        else:
+            if value < 0 or value > 24:
+                raise click.BadParameter('Поддерживаются только уровни увеличения с 0 по 24 (включительно).')
+    return ",".join(zooms)
+
+def band_handler(ctx, param, value):
+    band_indexes = []
+    if '..' in value:
+        start, stop = map(
+            lambda x: int(x) if x else None, value.split('..'))
+        if start is None:
+            start = 1
+        band_indexes.extend(list(map(str,
+                              list(range(start, stop + 1)))))
+    elif '-' in value:
+        start, stop = map(
+            lambda x: int(x) if x else None, value.split('-'))
+        if start is None:
+            start = 1
+        band_indexes.extend(list(map(str,
+                              list(range(start, stop + 1)))))
+    elif ',' in value:
+        band_indexes.extend(list(map(
+            lambda x: x if x else None, value.split(','))))
+    else:
+        try:
+            int(value)
+        except ValueError:
+            click.echo({"level": "fatal", "time": get_rfc3339nano_time(),
+                        "msg": "Недопустимый формат ввода каналов"})
+            raise click.BadParameter('''
+            Допустимые форматы ввода каналов:
+            1) 1..5
+            2) 1-5
+            3) 1,2,3,4,5
+            4) 1
+
+            Остальные форматы недопустимы.
+            ''')
+        else:
+            band_indexes = [str(value)]
+    return ",".join(band_indexes)

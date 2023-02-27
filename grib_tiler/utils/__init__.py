@@ -1,4 +1,12 @@
+from datetime import datetime
+
+import pytz
 import rasterio
+from pyrfc3339.generator import generate
+
+
+def get_rfc3339nano_time():
+    return generate(datetime.now().replace(tzinfo=pytz.utc), microseconds=True)
 
 
 def seek_by_meta_value(input_fn, **meta_term):
