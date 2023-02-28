@@ -17,7 +17,8 @@ def explode(coords):
 
 def fiona_bbox(geometry_coordinates):
     x, y = zip(*list(explode(geometry_coordinates)))
-    return min(x), min(y), max(x), max(y)
+
+    return float(format(min(x), ".2f")), float(format(min(y), ".2f")), float(format(max(x), ".2f")), float(format(max(y), ".2f"))
 
 def get_rfc3339nano_time():
     return generate(datetime.now().replace(tzinfo=pytz.utc), microseconds=True)

@@ -152,7 +152,7 @@ def grib_tiler(input_files,
         output_directories.append(output_directory)
         meta_json_filename = os.path.join(output_directory, 'meta.json')
         with open(meta_json_filename, 'w') as meta_json:
-            json.dump(meta_infos[0], meta_json, indent=4)
+            json.dump(meta_infos[0], meta_json)
     else:
         for idx, band in enumerate(bands_list):
             band_tiles_output_directory = os.path.join(output_directory, str(band))
@@ -160,7 +160,7 @@ def grib_tiler(input_files,
             output_directories.append(band_tiles_output_directory)
             meta_json_filename = os.path.join(band_tiles_output_directory, 'meta.json')
             with open(meta_json_filename, 'w') as meta_json:
-                json.dump(meta_infos[idx], meta_json, indent=4)
+                json.dump(meta_infos[idx], meta_json)
 
     if generate_isolines:
         band_isolines_list = []
@@ -180,7 +180,7 @@ def grib_tiler(input_files,
 
         for output_directory, band_isoline in zip(output_directories, band_isolines_list):
             with open(os.path.join(output_directory, f'contours.json'), 'w') as isoline_json:
-                json.dump(band_isoline, isoline_json, indent=4)
+                json.dump(band_isoline, isoline_json)
 
         echo({"level": "info", "time": get_rfc3339nano_time(),
               "msg": f"Генерация изолиний... OK"})
