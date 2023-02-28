@@ -118,7 +118,12 @@ class TranslateTask(Task):
 
 class IsolinesTask(Task):
 
-    ...
+    def __init__(self, input_filename, output_filename, output_directory=None,
+                 elevation_interval=10.0):
+        super().__init__(input_filename=input_filename,
+                         output_filename=output_filename,
+                         output_directory=output_directory)
+        self.elevation_interval = elevation_interval
 
 class VirtualTask(Task):
 

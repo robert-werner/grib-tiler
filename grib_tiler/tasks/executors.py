@@ -116,7 +116,8 @@ def render_tile(render_tile_task: RenderTileTask):
 
 def isolines_from_band(isolines_task: IsolinesTask):
     return build_contour(source_raster_filename=isolines_task.input_filename,
-                         output_vector_filename=isolines_task.output_filename)
+                         output_vector_filename=isolines_task.output_filename,
+                         elevation_interval=isolines_task.elevation_interval)
 
 
 def translate_raster(translate_task: TranslateTask):
@@ -165,10 +166,12 @@ def band_isolines(args):
     }
     input_filename = args[0]
     output_directory = args[1]
+    elevation_interval = args[2]
     filename = f'{os.path.splitext(input_filename)[0]}_isolines_{int(random.randint(0, 1000000))}.gpkg'
     output_filename = os.path.join(output_directory, filename)
     isolines_task = IsolinesTask(input_filename=input_filename,
-                                 output_filename=output_filename)
+                                 output_filename=output_filename,
+                                 elevation_interval=elevation_interval)
     isolines_filename = isolines_from_band(isolines_task)
     with fiona.open(isolines_filename) as isolines_vds:
         with multiprocessing.Pool(os.cpu_count()) as isoline_extract_pool:

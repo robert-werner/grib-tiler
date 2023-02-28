@@ -9,4 +9,3 @@ parallelbar
 pytz
 pyrfc3339
 fiona
-shapely

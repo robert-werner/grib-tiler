@@ -113,3 +113,11 @@ isolines_generate_opt = option(
     default=False,
     help='Генерировать изолинии'
 )
+
+isolines_elev_interval_opt = option(
+    '--il-elev',
+    'isolines_elevation_interval',
+    default=10.0,
+    type=float,
+    help='Интервал между изолиниями (в высоте). Действует только при генерации изолиний.'
+)

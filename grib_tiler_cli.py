@@ -26,8 +26,7 @@ EPSG_4326 = CRS.from_epsg(4326)
 EPSG_4326_BOUNDS = list(EPSG_4326.area_of_use.bounds)
 
 META_INFO = {
-"common": [
-        ]
+"common": []
 }
 
 @command(short_help='Генератор растровых тайлов из GRIB(2)-файлов.')
@@ -43,6 +42,7 @@ META_INFO = {
 @click_options.tilesize
 @click_options.image_format_opt
 @click_options.isolines_generate_opt
+@click_options.isolines_elev_interval_opt
 def grib_tiler(input_files,
                output_directory,
                cutline_filename,
@@ -54,7 +54,8 @@ def grib_tiler(input_files,
                threads,
                tilesize,
                image_format,
-               generate_isolines):
+               generate_isolines,
+               isolines_elevation_interval):
     tms = load_tms(output_crs)
 
     input_pack = None
@@ -164,7 +165,9 @@ def grib_tiler(input_files,
         isolines_generation_progress = 0
         echo({"level": "info", "time": get_rfc3339nano_time(),
               "msg": f"Генерация изолиний..."})
-        isolines_tasks = list(zip(warped_extracts, [TEMP_DIR.name] * len(warped_extracts)))
+        isolines_tasks = list(zip(warped_extracts,
+                                  [TEMP_DIR.name] * len(warped_extracts),
+                                  [isolines_elevation_interval] * len(warped_extracts)))
         for isoline_task in isolines_tasks:
             isoline = band_isolines(isoline_task)
             band_isolines_list.append(isoline)
