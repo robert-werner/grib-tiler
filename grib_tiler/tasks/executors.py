@@ -1,25 +1,29 @@
 import multiprocessing
 import os
 import random
+import threading
 
 import fiona
-from fiona.transform import transform_geom
-from shapely.geometry import shape
 import numpy
 import numpy as np
 import rasterio
 from pyproj import CRS
 from rasterio.apps.contour import build_contour
 from rasterio.apps.translate import translate
-from rasterio.apps.warp import warp
 from rasterio.apps.vrt import build_vrt
+from rasterio.apps.warp import warp
 from rasterio.cutils.min_max import min_max
 from rio_tiler.errors import TileOutsideBounds
 from rio_tiler.io import Reader
 from rio_tiler.utils import render
+from shapely import simplify
+from shapely.geometry import shape, mapping
 
 from grib_tiler.tasks import WarpTask, InRangeTask, RenderTileTask, TranslateTask, VirtualTask, IsolinesTask
 from grib_tiler.utils import fiona_bbox
+
+simplify_coeff = 0.0
+lock = threading.Lock()
 
 
 def concatenate_raster(virtual_task: VirtualTask):
@@ -145,20 +149,30 @@ def calculate_band_minmax(args):
     return min_max(input_filename)
 
 def extract_isoline_properties(feature):
-    isoline = {
-        "value": None,
-        "bbox": None,
-        "points": []
-    }
-    for x, y in feature["geometry"]["coordinates"]:
-        isoline["points"].append(x)
-        isoline["points"].append(y)
-    isoline["bbox"] = list(fiona_bbox(feature))
-    isoline["value"] = int(feature["properties"]["ELEV"])
+    global simplify_coeff
+    with lock:
+        isoline = {
+            "value": None,
+            "bbox": None,
+            "points": []
+        }
+        geometry_coordinates = feature["geometry"]["coordinates"]
+        if simplify_coeff != 0.0:
+            shapely_geom = shape(feature["geometry"])
+            shapely_geom = simplify(shapely_geom, tolerance=simplify_coeff)
+            geometry = mapping(shapely_geom)
+            geometry_coordinates = geometry['coordinates']
+
+        for x, y in geometry_coordinates:
+            isoline["points"].append(x)
+            isoline["points"].append(y)
+        isoline["bbox"] = list(fiona_bbox(geometry_coordinates))
+        isoline["value"] = int(feature["properties"]["ELEV"])
     return isoline
 
 
 def band_isolines(args):
+    global simplify_coeff
     isolines_json = {
         "isoline": [
 
@@ -167,6 +181,8 @@ def band_isolines(args):
     input_filename = args[0]
     output_directory = args[1]
     elevation_interval = args[2]
+    simplify_epsilon = args[3]
+    simplify_coeff = simplify_epsilon
     filename = f'{os.path.splitext(input_filename)[0]}_isolines_{int(random.randint(0, 1000000))}.gpkg'
     output_filename = os.path.join(output_directory, filename)
     isolines_task = IsolinesTask(input_filename=input_filename,

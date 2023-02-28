@@ -106,8 +106,7 @@ bands_list_opt = option(
     help="Каналы входного изображения для генерации тайлов.")
 
 isolines_generate_opt = option(
-    '--il',
-    '--isolines',
+    '--contours',
     'generate_isolines',
     is_flag=True,
     default=False,
@@ -115,9 +114,18 @@ isolines_generate_opt = option(
 )
 
 isolines_elev_interval_opt = option(
-    '--il-elev',
+    '--contours-elev',
     'isolines_elevation_interval',
     default=10.0,
     type=float,
     help='Интервал между изолиниями (в высоте). Действует только при генерации изолиний.'
 )
+
+isolines_simplify_epsilon_opt = option(
+    '--contours-simplify',
+    'isolines_simplify_epsilon',
+    default=0.0,
+    type=float,
+    help='Интервал между изолиниями (в высоте). Действует только при генерации изолиний.'
+)
+

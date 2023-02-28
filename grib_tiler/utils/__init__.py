@@ -15,8 +15,8 @@ def explode(coords):
             for f in explode(e):
                 yield f
 
-def fiona_bbox(f):
-    x, y = zip(*list(explode(f['geometry']['coordinates'])))
+def fiona_bbox(geometry_coordinates):
+    x, y = zip(*list(explode(geometry_coordinates)))
     return min(x), min(y), max(x), max(y)
 
 def get_rfc3339nano_time():

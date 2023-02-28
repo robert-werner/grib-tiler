@@ -43,6 +43,7 @@ META_INFO = {
 @click_options.image_format_opt
 @click_options.isolines_generate_opt
 @click_options.isolines_elev_interval_opt
+@click_options.isolines_simplify_epsilon_opt
 def grib_tiler(input_files,
                output_directory,
                cutline_filename,
@@ -55,7 +56,8 @@ def grib_tiler(input_files,
                tilesize,
                image_format,
                generate_isolines,
-               isolines_elevation_interval):
+               isolines_elevation_interval,
+               isolines_simplify_epsilon):
     tms = load_tms(output_crs)
 
     input_pack = None
@@ -167,7 +169,8 @@ def grib_tiler(input_files,
               "msg": f"Генерация изолиний..."})
         isolines_tasks = list(zip(warped_extracts,
                                   [TEMP_DIR.name] * len(warped_extracts),
-                                  [isolines_elevation_interval] * len(warped_extracts)))
+                                  [isolines_elevation_interval] * len(warped_extracts),
+                                  [isolines_simplify_epsilon] * len(warped_extracts)))
         for isoline_task in isolines_tasks:
             isoline = band_isolines(isoline_task)
             band_isolines_list.append(isoline)
@@ -177,11 +180,11 @@ def grib_tiler(input_files,
 
         if is_multiband:
             for band_isoline, band in zip(band_isolines_list, bands_list):
-                with open(os.path.join(output_directories[0], f'{str(band)}_isoline.json'), 'w') as isoline_json:
+                with open(os.path.join(output_directories[0], f'{str(band)}_contours.json'), 'w') as isoline_json:
                     json.dump(band_isoline, isoline_json)
         else:
             for output_directory, band_isoline in zip(output_directories, band_isolines_list):
-                with open(os.path.join(output_directory, f'isoline.json'), 'w') as isoline_json:
+                with open(os.path.join(output_directory, f'contours.json'), 'w') as isoline_json:
                     json.dump(band_isoline, isoline_json, indent=4)
         echo({"level": "info", "time": get_rfc3339nano_time(),
               "msg": f"Генерация изолиний... OK"})
