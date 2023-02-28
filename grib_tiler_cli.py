@@ -178,14 +178,10 @@ def grib_tiler(input_files,
             echo({"level": "info", "time": get_rfc3339nano_time(),
                   "msg": f"Генерация изолиний... {isolines_generation_progress}%"})
 
-        if is_multiband:
-            for band_isoline, band in zip(band_isolines_list, bands_list):
-                with open(os.path.join(output_directories[0], f'{str(band)}_contours.json'), 'w') as isoline_json:
-                    json.dump(band_isoline, isoline_json)
-        else:
-            for output_directory, band_isoline in zip(output_directories, band_isolines_list):
-                with open(os.path.join(output_directory, f'contours.json'), 'w') as isoline_json:
-                    json.dump(band_isoline, isoline_json, indent=4)
+        for output_directory, band_isoline in zip(output_directories, band_isolines_list):
+            with open(os.path.join(output_directory, f'contours.json'), 'w') as isoline_json:
+                json.dump(band_isoline, isoline_json, indent=4)
+
         echo({"level": "info", "time": get_rfc3339nano_time(),
               "msg": f"Генерация изолиний... OK"})
 
