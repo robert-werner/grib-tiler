@@ -2,6 +2,7 @@ import multiprocessing
 import os
 import random
 import threading
+import geopandas as gpd
 
 import fiona
 import numpy
@@ -189,6 +190,10 @@ def band_isolines(args):
                                  output_filename=output_filename,
                                  elevation_interval=elevation_interval)
     isolines_filename = isolines_from_band(isolines_task)
+    isolines_gpd_df = gpd.read_file(isolines_filename)
+    isolines_gpd_df_wgs84 = isolines_gpd_df.to_crs({'init': 'epsg:4326'})
+    os.remove(isolines_filename)
+    isolines_gpd_df_wgs84.to_file(isolines_filename, driver='GPKG')
     with fiona.open(isolines_filename) as isolines_vds:
         with multiprocessing.Pool(os.cpu_count()) as isoline_extract_pool:
             for result in isoline_extract_pool.map(extract_isoline_properties, isolines_vds):

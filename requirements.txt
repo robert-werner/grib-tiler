@@ -10,3 +10,4 @@ pytz
 pyrfc3339
 fiona
 shapely
+geopandas
