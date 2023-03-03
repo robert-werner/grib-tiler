@@ -165,8 +165,8 @@ def extract_isoline_properties(feature):
             geometry_coordinates = geometry['coordinates']
 
         for x, y in geometry_coordinates:
-            isoline["points"].append(float(format(x, ".2f")))
             isoline["points"].append(float(format(y, ".2f")))
+            isoline["points"].append(float(format(x, ".2f")))
         isoline["bbox"] = list(fiona_bbox(geometry_coordinates))
         isoline["value"] = int(feature["properties"]["ELEV"])
     return isoline
