@@ -22,12 +22,13 @@ warnings.filterwarnings("ignore")
 
 TEMP_DIR = tempfile.TemporaryDirectory()
 
-EPSG_4326 = CRS.from_epsg(4326)
-EPSG_4326_BOUNDS = list(EPSG_4326.area_of_use.bounds)
+EPSG_3857 = CRS.from_epsg(3857)
+EPSG_3857_BOUNDS = list(EPSG_3857.area_of_use.bounds)
 
 META_INFO = {
-"common": []
+    "common": []
 }
+
 
 @command(short_help='Генератор растровых тайлов из GRIB(2)-файлов.')
 @click_options.input_files_arg
@@ -58,21 +59,22 @@ def grib_tiler(input_files,
                generate_isolines,
                isolines_elevation_interval,
                isolines_simplify_epsilon):
-    tms = load_tms(output_crs)
+    tms = load_tms(output_crs, tilesize)
 
     input_pack = None
     bands_list = list(map(int, bands_list.split(',')))
     zooms_list = list(map(int, zooms_list.split(',')))
-    output_crs_bounds = CRS.from_user_input(output_crs).area_of_use.bounds
 
     echo({"level": "info", "time": get_rfc3339nano_time(), "msg": "Генерация номеров тайлов..."})
     echo({"level": "info", "time": get_rfc3339nano_time(),
           "msg": f"Генерация номеров тайлов... OK"})
-    tiles = list(mercantile.tiles(*EPSG_4326_BOUNDS, zooms_list)) # TODO: сделать генерацию номеров тайлов либо на Cython+OpenMP, либо на OpenCL
+    tiles = list(mercantile.tiles(*EPSG_3857_BOUNDS,
+                                  zooms_list))  # TODO: сделать генерацию номеров тайлов либо на Cython+OpenMP, либо на OpenCL
     if is_multiband:
         echo({"level": "info", "time": get_rfc3339nano_time(), "msg": "Тип выходных тайлов: мультиканальный"})
         if (len(input_files) != len(bands_list)) and (len(bands_list) != 1) and (len(input_files) != 1):
-            echo({"level": "fatal", "time": get_rfc3339nano_time(), "msg": "Количество каналов и входных файлов должно быть равно, или должен быть указан только один канал"})
+            echo({"level": "fatal", "time": get_rfc3339nano_time(),
+                  "msg": "Количество каналов и входных файлов должно быть равно, или должен быть указан только один канал"})
             raise UsageError(
                 'Количество каналов и входных файлов должно быть равно, или должен быть указан только один канал')
         elif (len(input_files) != len(bands_list)) and (len(bands_list) == 1):
@@ -85,7 +87,8 @@ def grib_tiler(input_files,
     else:
         echo({"level": "info", "time": get_rfc3339nano_time(), "msg": "Тип выходных тайлов: одноканальный"})
         if len(input_files) >= 2:
-            echo({"level": "fatal", "time": get_rfc3339nano_time(), "msg": "Использование двух и более входных файлов в одноканальном режиме недоступно"})
+            echo({"level": "fatal", "time": get_rfc3339nano_time(),
+                  "msg": "Использование двух и более входных файлов в одноканальном режиме недоступно"})
             raise UsageError('Использование двух и более входных файлов в одноканальном режиме недоступно')
         input_pack = list(zip(input_files * len(bands_list),
                               bands_list,
@@ -95,25 +98,36 @@ def grib_tiler(input_files,
         band_extract_progress = 0
         echo({"level": "info", "time": get_rfc3339nano_time(),
               "msg": f"Извлечение каналов из входных файлов..."})
+        extracted_cropped_bands = []
         extracted_bands = []
         for result in extract_pool.map(extract_band, input_pack):
             band_extract_progress += band_progress_step
-            echo({"level": "info", "time": get_rfc3339nano_time(), "msg": f"Извлечение каналов из входных файлов... {int(band_extract_progress)}%"})
-            extracted_bands.append([result, output_crs, output_crs_bounds, cutline_filename, cutline_layer, TEMP_DIR.name])
+            echo({"level": "info", "time": get_rfc3339nano_time(),
+                  "msg": f"Извлечение каналов из входных файлов... {int(band_extract_progress)}%"})
+            if not cutline_filename:
+                extracted_cropped_bands.append([result, 'EPSG:4326', CRS.from_epsg(3857).area_of_use.bounds, 'EPSG:4326' , None, None, TEMP_DIR.name, True])
+                extracted_bands.append([result, 'EPSG:4326', CRS.from_epsg(3857).area_of_use.bounds, 'EPSG:4326' , None, None, TEMP_DIR.name])
+            else:
+                extracted_cropped_bands.append([result, None, None, None, cutline_filename, cutline_layer, TEMP_DIR.name, True])
+                extracted_bands.append([result, None, None, None, cutline_filename, cutline_layer, TEMP_DIR.name, True])
+
         echo({"level": "info", "time": get_rfc3339nano_time(),
               "msg": f"Извлечение каналов из входных файлов... ОК"})
-    with multiprocessing.Pool(threads) as warp_pool:
-        warp_extract_progress = 0
-        echo({"level": "info", "time": get_rfc3339nano_time(),
-              "msg": f"Перепроецирование извлечённых каналов из входных файлов..."})
-        warped_extracts = []
-        for result in warp_pool.map(warp_band, extracted_bands):
-            warp_extract_progress += band_progress_step
+    with multiprocessing.Pool(threads) as warp_cropped_3857_pool:
+        warp_cropped_extract_progress = 0
+        echo({
+            "level": "info",
+            "time": get_rfc3339nano_time(),
+            "msg": f"Предварительное перепроецирование в EPSG:4326 извлечённых каналов из входных файлов..."
+        })
+        warped_cropped_3857_extracts = []
+        for result in warp_cropped_3857_pool.map(warp_band, extracted_cropped_bands):
+            warp_cropped_extract_progress += band_progress_step
             echo({"level": "info", "time": get_rfc3339nano_time(),
-                  "msg": f"Перепроецирование извлечённых каналов из входных файлов... {int(warp_extract_progress)}%"})
-            warped_extracts.append(result)
+                  "msg": f"Предварительное перепроецирование в EPSG:4326 извлечённых каналов из входных файлов... {int(warp_cropped_extract_progress)}%"})
+            warped_cropped_3857_extracts.append(result)
         echo({"level": "info", "time": get_rfc3339nano_time(),
-              "msg": f"Перепроецирование извлечённых каналов из входных файлов... ОК"})
+              "msg": f"Предварительное перепроецирование в EPSG:4326 извлечённых каналов из входных файлов... ОК"})
     with multiprocessing.Pool(threads) as inrange_pool:
         in_range_calc_progress = 0
         echo({"level": "info", "time": get_rfc3339nano_time(),
@@ -121,15 +135,15 @@ def grib_tiler(input_files,
         warped_minmax = []
         meta_infos = []
         meta_info = deepcopy(META_INFO)
-        for result in inrange_pool.map(calculate_band_minmax, warped_extracts):
+        for result in inrange_pool.map(calculate_band_minmax, warped_cropped_3857_extracts):
             in_range_calc_progress += band_progress_step
             echo({"level": "info", "time": get_rfc3339nano_time(),
                   "msg": f"Вычисление мин/макс каналов... {int(in_range_calc_progress)}%"})
             warped_minmax.append(result)
             meta_info['common'].append(
                 {
-                  'step': (result[1] - result[0]) / 255,
-                  'min': result[0]
+                    'step': (result[1] - result[0]) / 255,
+                    'min': result[0]
                 }
             )
         if not is_multiband:
@@ -145,7 +159,8 @@ def grib_tiler(input_files,
         else:
             meta_infos = [meta_info]
         echo({"level": "info", "time": get_rfc3339nano_time(),
-                  "msg": f"Вычисление мин/макс каналов... ОК"})
+              "msg": f"Вычисление мин/макс каналов... ОК"})
+
     output_directories = []
     if is_multiband:
         os.makedirs(output_directory, exist_ok=True)
@@ -167,10 +182,10 @@ def grib_tiler(input_files,
         isolines_generation_progress = 0
         echo({"level": "info", "time": get_rfc3339nano_time(),
               "msg": f"Генерация изолиний..."})
-        isolines_tasks = list(zip(warped_extracts,
-                                  [TEMP_DIR.name] * len(warped_extracts),
-                                  [isolines_elevation_interval] * len(warped_extracts),
-                                  [isolines_simplify_epsilon] * len(warped_extracts)))
+        isolines_tasks = list(zip(warped_cropped_3857_extracts,
+                                  [TEMP_DIR.name] * len(warped_cropped_3857_extracts),
+                                  [isolines_elevation_interval] * len(warped_cropped_3857_extracts),
+                                  [isolines_simplify_epsilon] * len(warped_cropped_3857_extracts)))
         for isoline_task in isolines_tasks:
             isoline = band_isolines(isoline_task)
             band_isolines_list.append(isoline)
@@ -184,16 +199,53 @@ def grib_tiler(input_files,
 
         echo({"level": "info", "time": get_rfc3339nano_time(),
               "msg": f"Генерация изолиний... OK"})
+    with multiprocessing.Pool(threads) as warp_3857_pool:
+        warp_extract_progress = 0
+        echo({
+            "level": "info",
+            "time": get_rfc3339nano_time(),
+            "msg": f"Пперепроецирование в EPSG:4326 извлечённых каналов из входных файлов..."
+        })
+        warped_3857_extracts = []
+        for result in warp_3857_pool.map(warp_band, extracted_cropped_bands):
+            warp_cropped_extract_progress += band_progress_step
+            echo({"level": "info", "time": get_rfc3339nano_time(),
+                  "msg": f"Перепроецирование в EPSG:4326 извлечённых каналов из входных файлов... {int(warp_extract_progress)}%"})
+            warped_3857_extracts.append(result)
+        echo({"level": "info", "time": get_rfc3339nano_time(),
+              "msg": f"Перепроецирование в EPSG:4326 извлечённых каналов из входных файлов... ОК"})
 
+    input_packs = []
+    for input_file in warped_3857_extracts:
+        input_packs.append([
+            input_file, output_crs, None,
+            'EPSG:4326',
+            None, None, TEMP_DIR.name, False
+        ])
+
+    with multiprocessing.Pool(threads) as warp_pool:
+        warp_cropped_extract_progress = 0
+        echo({"level": "info", "time": get_rfc3339nano_time(),
+              "msg": f"Перепроецирование извлечённых каналов из входных файлов..."})
+        warped_extracts = []
+        for result in warp_pool.map(warp_band, input_packs):
+            warp_cropped_extract_progress += band_progress_step
+            echo({"level": "info", "time": get_rfc3339nano_time(),
+                  "msg": f"Перепроецирование извлечённых каналов из входных файлов... {int(warp_cropped_extract_progress)}%"})
+            warped_extracts.append(result)
+        echo({"level": "info", "time": get_rfc3339nano_time(),
+              "msg": f"Перепроецирование извлечённых каналов из входных файлов... ОК"})
     with multiprocessing.Pool(threads) as byte_conv_pool:
         byte_conv_progress = 0
         echo({"level": "info", "time": get_rfc3339nano_time(),
               "msg": f"Конверсия извлечённых каналов в 8-битные изображения..."})
         byte_converted = []
-        byte_conv_tasks = list(zip(warped_extracts, [[warped_minmax_elem] for warped_minmax_elem in warped_minmax], [TEMP_DIR.name] * len(bands_list)))
+        byte_conv_tasks = list(zip(warped_extracts, [[warped_minmax_elem] for warped_minmax_elem in warped_minmax],
+                                   [TEMP_DIR.name] * len(bands_list)))
         for result in byte_conv_pool.map(transalte_bands_to_byte, byte_conv_tasks):
             byte_conv_progress += band_progress_step
-            echo({"level": "info", "time": get_rfc3339nano_time(), "msg": f"Конверсия извлечённых каналов в 8-битные изображения... {int(byte_conv_progress)}%"})
+            echo({"level": "info", "time": get_rfc3339nano_time(),
+                  "msg": f"Конверсия извлечённых каналов в 8-битные изображения... {int(byte_conv_progress)}%"})
             byte_converted.append(result)
         echo({"level": "info", "time": get_rfc3339nano_time(),
               "msg": f"Конверсия извлечённых каналов в 8-битные изображения... ОК"})
@@ -205,16 +257,19 @@ def grib_tiler(input_files,
         tiling_source_file_vrt = concatenate_bands(concatenate_args)
         tiling_source_file = vrt_to_raster([tiling_source_file_vrt, TEMP_DIR.name])
         tiling_source_files.append(tiling_source_file)
-        echo({"level": "info", "time": get_rfc3339nano_time(), "msg": f"Объединение и рендеринг 8-битных изображений... OK"})
+        echo({"level": "info", "time": get_rfc3339nano_time(),
+              "msg": f"Объединение и рендеринг 8-битных изображений... OK"})
         render_tiles_quantity = len(tiles)
     else:
         with multiprocessing.Pool(threads) as vrt_to_raster_pool:
             vrt_to_raster_progress = 0
             echo({"level": "info", "time": get_rfc3339nano_time(),
                   "msg": f"Рендеринг 8-битных изображений..."})
-            for result in vrt_to_raster_pool.map(vrt_to_raster, list(zip(byte_converted, [TEMP_DIR.name] * len(bands_list)))):
+            for result in vrt_to_raster_pool.map(vrt_to_raster,
+                                                 list(zip(byte_converted, [TEMP_DIR.name] * len(bands_list)))):
                 vrt_to_raster_progress += band_progress_step
-                echo({"level": "info", "time": get_rfc3339nano_time(), "msg": f"Рендеринг 8-битных изображений... {int(vrt_to_raster_progress)}%"})
+                echo({"level": "info", "time": get_rfc3339nano_time(),
+                      "msg": f"Рендеринг 8-битных изображений... {int(vrt_to_raster_progress)}%"})
                 tiling_source_files.append(result)
             echo({"level": "info", "time": get_rfc3339nano_time(),
                   "msg": f"Рендеринг 8-битных изображений... OK"})
@@ -223,13 +278,14 @@ def grib_tiler(input_files,
     with multiprocessing.Pool(threads) as render_tile_pool:
         render_tile_tasks = []
         echo({"level": "info", "time": get_rfc3339nano_time(),
-              "msg": f"Генерация задач на тайлирование изображений..."}) # TODO: сделать всё это в _ленивом_ итерировании (tiles)
+              "msg": f"Генерация задач на тайлирование изображений..."})  # TODO: сделать всё это в _ленивом_ итерировании (tiles)
         tiling_task_generation_progress = 0
         for tile in tiles:
             for band, band_output_directory, tiling_source_file in zip(bands_list, output_directories,
                                                                        tiling_source_files):
                 tiling_task_generation_progress += render_tiles_progress_step
-                echo({"level": "info", "time": get_rfc3339nano_time(), "msg": f"Генерация задач на тайлирование изображений... {int(tiling_task_generation_progress)}%"})
+                echo({"level": "info", "time": get_rfc3339nano_time(),
+                      "msg": f"Генерация задач на тайлирование изображений... {int(tiling_task_generation_progress)}%"})
                 nodata_mask = None
                 if len(bands_list) > 4 and is_multiband:
                     image_format = 'GTIFF'
@@ -256,20 +312,17 @@ def grib_tiler(input_files,
               "msg": f"Тайлирование изображений..."})
         for result in render_tile_pool.map(render_tile, render_tile_tasks):
             tiling_progress += render_tiles_progress_step
-            echo({"level": "info", "time": get_rfc3339nano_time(), "msg": f"Тайлирование изображений... {int(tiling_progress)}%"})
+            echo({"level": "info", "time": get_rfc3339nano_time(),
+                  "msg": f"Тайлирование изображений... {int(tiling_progress)}%"})
         echo({"level": "info", "time": get_rfc3339nano_time(),
               "msg": f"Тайлирование изображений... OK"})
         TEMP_DIR.cleanup()
-
-
-
-
 
 
 if __name__ == '__main__':
     try:
         grib_tiler()
     except Exception as e:
-        echo({"level": "fatal", "time": get_rfc3339nano_time(),        "msg": traceback.format_exc()})
+        echo({"level": "fatal", "time": get_rfc3339nano_time(), "msg": traceback.format_exc()})
         TEMP_DIR.cleanup()
         sys.exit()

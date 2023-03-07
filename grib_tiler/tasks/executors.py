@@ -32,6 +32,7 @@ def concatenate_raster(virtual_task: VirtualTask):
                      dest_filename=virtual_task.output_filename,
                      resample_algorithm='bilinear')
 
+
 def warp_raster(warp_task: WarpTask):
     return warp(
         source_filename=warp_task.input_filename,
@@ -46,7 +47,9 @@ def warp_raster(warp_task: WarpTask):
         dest_nodata=warp_task.destination_nodata,
         flush_to_disk=warp_task.write_flush,
         target_extent_bbox=warp_task.target_extent,
-        target_extent_crs=warp_task.target_extent_crs)
+        target_extent_crs=warp_task.target_extent_crs,
+        crop_to_cutline=warp_task.crop_to_cutline)
+
 
 def _inrange_calculator(rio_ds, band):
     with rasterio.open(rio_ds) as rio_ds:
@@ -56,6 +59,7 @@ def _inrange_calculator(rio_ds, band):
         except rasterio._err.CPLE_AppDefinedError:
             statistics = rio_ds.statistics(band, approx=False, clear_cache=True)
             return statistics.min, statistics.max
+
 
 def in_range_calculator(inrange_task: InRangeTask):
     in_ranges = []
@@ -75,7 +79,6 @@ def in_range_calculator(inrange_task: InRangeTask):
                 statistics = input_rio.statistics(band, approx=False, clear_cache=True)
                 in_ranges.append((statistics.min, statistics.max))
     return tuple(in_ranges)
-
 
 
 def render_tile(render_tile_task: RenderTileTask):
@@ -103,7 +106,7 @@ def render_tile(render_tile_task: RenderTileTask):
                 if len(render_tile_task.bands) == 2:
                     tile_bytes = render(data=numpy.zeros(
                         shape=(
-                        3, render_tile_task.tilesize, render_tile_task.tilesize),
+                            3, render_tile_task.tilesize, render_tile_task.tilesize),
                         dtype='uint8'), img_format=render_tile_task.image_format)
                 else:
                     tile_bytes = render(data=numpy.zeros(
@@ -127,12 +130,13 @@ def isolines_from_band(isolines_task: IsolinesTask):
 
 def translate_raster(translate_task: TranslateTask):
     return translate(source_filename=translate_task.input_filename,
-              dest_filename=translate_task.output_filename,
-              bands_list=translate_task.bands,
-              output_format=translate_task.output_format,
-              min_max_list=translate_task.scale,
-              resample_algorithm='bilinear',
-              output_dtype=translate_task.output_dtype)
+                     dest_filename=translate_task.output_filename,
+                     bands_list=translate_task.bands,
+                     output_format=translate_task.output_format,
+                     min_max_list=translate_task.scale,
+                     resample_algorithm='bilinear',
+                     output_dtype=translate_task.output_dtype)
+
 
 def vrt_to_raster(args):
     input_filename = args[0]
@@ -145,9 +149,11 @@ def vrt_to_raster(args):
                                    output_dtype='Byte')
     return translate_raster(translate_task)
 
+
 def calculate_band_minmax(args):
     input_filename = args
     return min_max(input_filename)
+
 
 def extract_isoline_properties(feature):
     global simplify_coeff
@@ -190,10 +196,6 @@ def band_isolines(args):
                                  output_filename=output_filename,
                                  elevation_interval=elevation_interval)
     isolines_filename = isolines_from_band(isolines_task)
-    isolines_gpd_df = gpd.read_file(isolines_filename)
-    isolines_gpd_df_wgs84 = isolines_gpd_df.to_crs({'init': 'epsg:4326'})
-    os.remove(isolines_filename)
-    isolines_gpd_df_wgs84.to_file(isolines_filename, driver='GPKG')
     with fiona.open(isolines_filename) as isolines_vds:
         with multiprocessing.Pool(os.cpu_count()) as isoline_extract_pool:
             for result in isoline_extract_pool.map(extract_isoline_properties, isolines_vds):
@@ -201,42 +203,26 @@ def band_isolines(args):
     return isolines_json
 
 
-
-
-
 def warp_band(args):
     input_filename = args[0]
     output_crs = args[1]
     output_crs_bounds = args[2]
-    cutline_filename = args[3]
-    cutline_layer = args[4]
-    output_directory = args[5]
-    if cutline_filename:
-        warp_task = WarpTask(input_filename=input_filename,
-                             output_directory=output_directory,
-                             output_crs=output_crs,
-                             target_extent=None,
-                             target_extent_crs=None,
-                             cutline_filename=cutline_filename,
-                             cutline_layer_name=cutline_layer,
-                             output_format='VRT')
-    else:
-        if output_crs == 'EPSG:3857':
-            warp_task = WarpTask(input_filename=input_filename,
-                                 output_directory=output_directory,
-                                 output_crs='EPSG:4326',
-                                 target_extent=(-180.0, -90.0, 180.0, 90.0),
-                                 target_extent_crs='EPSG:4326',
-                                 output_format='VRT')
-            input_filename = warp_raster(warp_task)
-        warp_task = WarpTask(input_filename=input_filename,
+    bounds_crs = args[3]
+    cutline_filename = args[4]
+    cutline_layer = args[5]
+    output_directory = args[6]
+    crop_to_cutline = args[7]
+    warp_task = WarpTask(input_filename=input_filename,
                              output_directory=output_directory,
                              output_crs=output_crs,
                              target_extent=output_crs_bounds,
-                             target_extent_crs='EPSG:4326',
-                             output_format='VRT')
-
+                             target_extent_crs=bounds_crs,
+                             cutline_filename=cutline_filename,
+                             cutline_layer_name=cutline_layer,
+                             output_format='VRT',
+                             crop_to_cutline=crop_to_cutline)
     return warp_raster(warp_task)
+
 
 def extract_band(args):
     input_filename = args[0]
@@ -249,6 +235,7 @@ def extract_band(args):
                                    band=band,
                                    output_dtype=None)
     return translate_raster(translate_task)
+
 
 def precut_bands(args):
     input_filename = args[0]
@@ -264,6 +251,7 @@ def precut_bands(args):
                          target_extent_crs=target_extent_crs,
                          output_format='VRT')
     return warp_raster(warp_task), band, output_directory
+
 
 def warp_bands(args):
     input_filename = args[0]
@@ -284,12 +272,14 @@ def warp_bands(args):
                          output_format='VRT')
     return warp_raster(warp_task), band, output_directory
 
+
 def calculate_inrange_bands(args):
     input_filename = args[0]
     bands = args[1]
     inrange_task = InRangeTask(input_filename=input_filename,
                                bands=bands)
     return input_filename, bands, in_range_calculator(inrange_task)
+
 
 def transalte_bands_to_byte(args):
     input_filename = args[0]
@@ -302,6 +292,7 @@ def transalte_bands_to_byte(args):
                                    scale=scale,
                                    output_dtype='Byte')
     return translate_raster(translate_task)
+
 
 def concatenate_bands(args):
     input_filenames = args[0]
