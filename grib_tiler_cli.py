@@ -18,6 +18,10 @@ from grib_tiler.tasks.executors import extract_band, warp_band, calculate_band_m
     concatenate_bands, vrt_to_raster, render_tile, band_isolines
 from grib_tiler.utils import click_options, get_rfc3339nano_time
 
+from rasterio.cutils.bounds import extent # TODO: посмотреть код GDALWarp(), выяснить, происходит ли обрезка по пределам СК или входного изображения
+
+os.environ['GDAL_PAM_ENABLED'] = 'NO'
+
 warnings.filterwarnings("ignore")
 
 TEMP_DIR = tempfile.TemporaryDirectory()
@@ -105,8 +109,9 @@ def grib_tiler(input_files,
             echo({"level": "info", "time": get_rfc3339nano_time(),
                   "msg": f"Извлечение каналов из входных файлов... {int(band_extract_progress)}%"})
             if not cutline_filename:
-                extracted_cropped_bands.append([result, 'EPSG:4326', CRS.from_epsg(3857).area_of_use.bounds, 'EPSG:4326' , None, None, TEMP_DIR.name, True])
-                extracted_bands.append([result, 'EPSG:4326', CRS.from_epsg(3857).area_of_use.bounds, 'EPSG:4326' , None, None, TEMP_DIR.name])
+                band_bounds = extent(result)
+                extracted_cropped_bands.append([result, 'EPSG:4326', band_bounds, 'EPSG:4326', None, None, TEMP_DIR.name, True])
+                extracted_bands.append([result, 'EPSG:4326', band_bounds, 'EPSG:4326', None, None, TEMP_DIR.name, True])
             else:
                 extracted_cropped_bands.append([result, None, None, None, cutline_filename, cutline_layer, TEMP_DIR.name, True])
                 extracted_bands.append([result, None, None, None, cutline_filename, cutline_layer, TEMP_DIR.name, True])
@@ -216,12 +221,20 @@ def grib_tiler(input_files,
               "msg": f"Перепроецирование в EPSG:4326 извлечённых каналов из входных файлов... ОК"})
 
     input_packs = []
-    for input_file in warped_3857_extracts:
-        input_packs.append([
-            input_file, output_crs, None,
-            'EPSG:4326',
-            None, None, TEMP_DIR.name, False
-        ])
+    if output_crs not in ['EPSG:3575']:
+        for input_file in warped_3857_extracts:
+            input_packs.append([
+                input_file, output_crs, CRS.from_string(output_crs).area_of_use.bounds,
+                'EPSG:4326',
+                None, None, TEMP_DIR.name, False
+            ])
+    else:
+        for input_file in warped_3857_extracts:
+            input_packs.append([
+                input_file, output_crs, None,
+                None,
+                None, None, TEMP_DIR.name, False
+            ])
 
     with multiprocessing.Pool(threads) as warp_pool:
         warp_cropped_extract_progress = 0

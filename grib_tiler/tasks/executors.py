@@ -48,7 +48,11 @@ def warp_raster(warp_task: WarpTask):
         flush_to_disk=warp_task.write_flush,
         target_extent_bbox=warp_task.target_extent,
         target_extent_crs=warp_task.target_extent_crs,
-        crop_to_cutline=warp_task.crop_to_cutline)
+        crop_to_cutline=warp_task.crop_to_cutline,
+        configuration_options={
+            'CUTLINE_ALL_TOUCHED': 'TRUE'
+        }
+    )
 
 
 def _inrange_calculator(rio_ds, band):
@@ -152,7 +156,10 @@ def vrt_to_raster(args):
 
 def calculate_band_minmax(args):
     input_filename = args
-    return min_max(input_filename)
+    with rasterio.open(input_filename) as input_riods:
+        stats = input_riods.statistics(1, approx=False, clear_cache=True)
+
+    return [stats.min, stats.max]
 
 
 def extract_isoline_properties(feature):
@@ -220,7 +227,8 @@ def warp_band(args):
                              cutline_filename=cutline_filename,
                              cutline_layer_name=cutline_layer,
                              output_format='VRT',
-                             crop_to_cutline=crop_to_cutline)
+                             crop_to_cutline=crop_to_cutline
+                         )
     return warp_raster(warp_task)
 
 
