@@ -220,14 +220,14 @@ def warp_band(args):
     output_directory = args[6]
     crop_to_cutline = args[7]
     warp_task = WarpTask(input_filename=input_filename,
-                             output_directory=output_directory,
-                             output_crs=output_crs,
-                             target_extent=output_crs_bounds,
-                             target_extent_crs=bounds_crs,
-                             cutline_filename=cutline_filename,
-                             cutline_layer_name=cutline_layer,
-                             output_format='VRT',
-                             crop_to_cutline=crop_to_cutline
+                         output_directory=output_directory,
+                         output_crs=output_crs,
+                         target_extent=output_crs_bounds,
+                         target_extent_crs=bounds_crs,
+                         cutline_filename=cutline_filename,
+                         cutline_layer_name=cutline_layer,
+                         output_format='VRT',
+                         crop_to_cutline=crop_to_cutline
                          )
     return warp_raster(warp_task)
 
