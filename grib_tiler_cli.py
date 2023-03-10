@@ -7,6 +7,8 @@ import traceback
 import warnings
 from copy import deepcopy
 
+from shapely import geometry
+from shapely.geometry import box
 import mercantile
 import numpy as np
 from click import UsageError, echo, command
@@ -18,7 +20,7 @@ from grib_tiler.tasks.executors import extract_band, warp_band, calculate_band_m
     concatenate_bands, vrt_to_raster, render_tile, band_isolines
 from grib_tiler.utils import click_options, get_rfc3339nano_time
 
-from rasterio.cutils.bounds import extent # TODO: посмотреть код GDALWarp(), выяснить, происходит ли обрезка по пределам СК или входного изображения
+from rasterio.cutils.bounds import extent  # TODO: посмотреть код GDALWarp(), выяснить, происходит ли обрезка по пределам СК или входного изображения
 
 os.environ['GDAL_PAM_ENABLED'] = 'NO'
 
@@ -38,7 +40,6 @@ META_INFO = {
 @click_options.input_files_arg
 @click_options.output_directory_arg
 @click_options.cutline_filename_opt
-@click_options.cutline_layer_opt
 @click_options.bands_list_opt
 @click_options.zooms_list_opt
 @click_options.multiband_opt
@@ -49,10 +50,10 @@ META_INFO = {
 @click_options.isolines_generate_opt
 @click_options.isolines_elev_interval_opt
 @click_options.isolines_simplify_epsilon_opt
+@click_options.equator_opt
 def grib_tiler(input_files,
                output_directory,
                cutline_filename,
-               cutline_layer,
                bands_list,
                zooms_list,
                is_multiband,
@@ -62,12 +63,38 @@ def grib_tiler(input_files,
                image_format,
                generate_isolines,
                isolines_elevation_interval,
-               isolines_simplify_epsilon):
+               isolines_simplify_epsilon,
+               get_equator):
     tms = load_tms(output_crs, tilesize)
 
     input_pack = None
     bands_list = list(map(int, bands_list.split(',')))
     zooms_list = list(map(int, zooms_list.split(',')))
+    input_files_bounds = []
+
+    if get_equator:
+        input_files_bounds = []
+        for input_file in input_files:
+            input_file_bounds = extent(input_file, True)
+            if get_equator == 'northern':
+                input_file_bounds[1] = 0.0
+                input_file_bounds[3] = float(int(input_file_bounds[3]))
+            elif get_equator == 'southern':
+                input_file_bounds[1] = float(int(input_file_bounds[1]))
+                input_file_bounds[3] = 0.0
+
+            extent_geojson = {}
+            extent_geojson["type"] = "FeatureCollection"
+            extent_geojson["name"] = "equator"
+            extent_geojson["features"] = [{
+                "type": "Feature",
+                "properties": {},
+                "geometry": json.loads(json.dumps(geometry.mapping(box(*input_file_bounds))))
+            }]
+            extent_fp_fn = os.path.join(TEMP_DIR.name, os.path.basename(input_file) + '.geojson')
+            with open(extent_fp_fn, 'w') as extent_fp:
+                json.dump(extent_geojson, extent_fp)
+            input_files_bounds.append(extent_fp_fn)
 
     echo({"level": "info", "time": get_rfc3339nano_time(), "msg": "Генерация номеров тайлов..."})
     echo({"level": "info", "time": get_rfc3339nano_time(),
@@ -112,10 +139,15 @@ def grib_tiler(input_files,
             warped_band = warp_band(warp_band_args)
             if cutline_filename:
                 extracted_cropped_bands.append(
-                    [warped_band, 'EPSG:4326', None, None, cutline_filename, cutline_layer, TEMP_DIR.name, True])
+                        [warped_band, 'EPSG:4326', None, None, cutline_filename, None, TEMP_DIR.name, True])
             else:
-                extracted_cropped_bands.append(
-                    [warped_band, 'EPSG:4326', band_bounds, 'EPSG:4326', None, None, TEMP_DIR.name, True])
+                if get_equator:
+                    extracted_cropped_bands.append(
+                        [warped_band, 'EPSG:4326', None, None, input_files_bounds[0], None, TEMP_DIR.name, True])
+                else:
+                    extracted_cropped_bands.append(
+                        [warped_band, 'EPSG:4326', band_bounds, 'EPSG:4326', None, None, TEMP_DIR.name, True])
+
 
         echo({"level": "info", "time": get_rfc3339nano_time(),
               "msg": f"Извлечение каналов из входных файлов... ОК"})
@@ -231,13 +263,20 @@ def grib_tiler(input_files,
                 None, None, TEMP_DIR.name, False
             ])
     else:
-        for input_file in warped_3857_extracts:
-            input_packs.append([
-                input_file, output_crs, CRS.from_string(output_crs).area_of_use.bounds,
-                'EPSG:4326',
-                None, None, TEMP_DIR.name, False
-            ])
-
+        if get_equator:
+            for input_file in warped_3857_extracts:
+                input_packs.append([
+                    input_file, output_crs, None,
+                    None,
+                    None, None, TEMP_DIR.name, False
+                ])
+        else:
+            for input_file in warped_3857_extracts:
+                input_packs.append([
+                    input_file, output_crs, CRS.from_string(output_crs).area_of_use.bounds,
+                    'EPSG:4326',
+                    None, None, TEMP_DIR.name, False
+                ])
 
     with multiprocessing.Pool(threads) as warp_pool:
         warp_cropped_extract_progress = 0

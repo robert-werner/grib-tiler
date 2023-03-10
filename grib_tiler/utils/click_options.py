@@ -1,7 +1,17 @@
 import os
 
+import click
 from click import option, argument, Path, Choice
-from grib_tiler.utils.click_handlers import cpu_count_handler, crs_handler, zoom_handler, grib_handler, band_handler
+
+from grib_tiler.utils.click_handlers import cpu_count_handler, crs_handler, zoom_handler, band_handler
+
+equator_opt = option(
+    '--equator',
+    'get_equator',
+    default=None,
+    type=click.Choice(['northern', 'southern'], case_sensitive=True),
+    help='Генерировать тайлы, обрезанные по северу или от югу от экватора. В данном режиме явное указание файла обрезки игнорируется.'
+)
 
 multiband_opt = option(
     '--multiband',
@@ -18,13 +28,6 @@ cutline_filename_opt = option(
     help='Путь к файлу обрезки растра'
 )
 
-cutline_layer_opt = option(
-    '--cl',
-    '--cutline-layer',
-    'cutline_layer',
-    default=None,
-    help='Слой внутри файла обрезки растра'
-)
 files_in_arg = argument(
     'input',
     type=Path(resolve_path=True, file_okay=True, dir_okay=False, exists=True),
@@ -128,4 +131,5 @@ isolines_simplify_epsilon_opt = option(
     type=float,
     help='Интервал между изолиниями (в высоте). Действует только при генерации изолиний.'
 )
+
 
