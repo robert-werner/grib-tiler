@@ -72,6 +72,7 @@ def grib_tiler(input_files,
     zooms_list = list(map(int, zooms_list.split(',')))
     input_files_bounds = []
 
+
     if get_equator:
         input_files_bounds = []
         for input_file in input_files:
@@ -91,7 +92,7 @@ def grib_tiler(input_files,
                 "properties": {},
                 "geometry": json.loads(json.dumps(geometry.mapping(box(*input_file_bounds))))
             }]
-            extent_fp_fn = os.path.join(TEMP_DIR.name, os.path.basename(input_file) + '.geojson')
+            extent_fp_fn = os.path.join(TEMP_DIR.name, os.path.basename(input_file.replace(' ', '_')) + '.geojson')
             with open(extent_fp_fn, 'w') as extent_fp:
                 json.dump(extent_geojson, extent_fp)
             input_files_bounds.append(extent_fp_fn)
@@ -108,6 +109,7 @@ def grib_tiler(input_files,
                   "msg": "Количество каналов и входных файлов должно быть равно, или должен быть указан только один канал"})
             raise UsageError(
                 'Количество каналов и входных файлов должно быть равно, или должен быть указан только один канал')
+
         elif (len(input_files) != len(bands_list)) and (len(bands_list) == 1):
             bands_list = bands_list * len(input_files)
         elif (len(input_files) == 1) and (len(input_files) != len(bands_list)):
@@ -137,6 +139,7 @@ def grib_tiler(input_files,
             band_bounds = extent(result, True)
             warp_band_args = [result, 'EPSG:4326', band_bounds, 'EPSG:4326', None, None, TEMP_DIR.name, True]
             warped_band = warp_band(warp_band_args)
+            print(cutline_filename)
             if cutline_filename:
                 extracted_cropped_bands.append(
                         [warped_band, 'EPSG:4326', None, None, cutline_filename, None, TEMP_DIR.name, True])
