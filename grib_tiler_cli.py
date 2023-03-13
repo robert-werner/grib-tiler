@@ -51,6 +51,8 @@ META_INFO = {
 @click_options.isolines_elev_interval_opt
 @click_options.isolines_simplify_epsilon_opt
 @click_options.equator_opt
+@click_options.transparency_opt
+@click_options.nodata_opt
 def grib_tiler(input_files,
                output_directory,
                cutline_filename,
@@ -64,7 +66,9 @@ def grib_tiler(input_files,
                generate_isolines,
                isolines_elevation_interval,
                isolines_simplify_epsilon,
-               get_equator):
+               get_equator,
+               transparency_percent,
+               output_nodata):
     tms = load_tms(output_crs, tilesize)
 
     input_pack = None
@@ -72,6 +76,8 @@ def grib_tiler(input_files,
     zooms_list = list(map(int, zooms_list.split(',')))
     input_files_bounds = []
 
+    if transparency_percent:
+        image_format = 'PNG'
 
     if get_equator:
         input_files_bounds = []
@@ -137,18 +143,18 @@ def grib_tiler(input_files,
             echo(json.dumps({"level": "info", "time": get_rfc3339nano_time(),
                   "msg": f"Извлечение каналов из входных файлов... {int(band_extract_progress)}%"}, ensure_ascii=False))
             band_bounds = extent(result, True)
-            warp_band_args = [result, 'EPSG:4326', band_bounds, 'EPSG:4326', None, None, TEMP_DIR.name, True]
+            warp_band_args = [result, 'EPSG:4326', band_bounds, 'EPSG:4326', None, None, TEMP_DIR.name, True, output_nodata]
             warped_band = warp_band(warp_band_args)
             if cutline_filename:
                 extracted_cropped_bands.append(
-                        [warped_band, 'EPSG:4326', None, None, cutline_filename, None, TEMP_DIR.name, True])
+                        [warped_band, 'EPSG:4326', None, None, cutline_filename, None, TEMP_DIR.name, True, output_nodata])
             else:
                 if get_equator:
                     extracted_cropped_bands.append(
-                        [warped_band, 'EPSG:4326', None, None, input_files_bounds[0], None, TEMP_DIR.name, True])
+                        [warped_band, 'EPSG:4326', None, None, input_files_bounds[0], None, TEMP_DIR.name, True, output_nodata])
                 else:
                     extracted_cropped_bands.append(
-                        [warped_band, 'EPSG:4326', band_bounds, 'EPSG:4326', None, None, TEMP_DIR.name, True])
+                        [warped_band, 'EPSG:4326', band_bounds, 'EPSG:4326', None, None, TEMP_DIR.name, True, output_nodata])
 
 
         echo(json.dumps({"level": "info", "time": get_rfc3339nano_time(),
@@ -262,7 +268,7 @@ def grib_tiler(input_files,
             input_packs.append([
                 input_file, output_crs, None,
                 None,
-                None, None, TEMP_DIR.name, False
+                None, None, TEMP_DIR.name, False, output_nodata
             ])
     else:
         if get_equator:
@@ -270,14 +276,14 @@ def grib_tiler(input_files,
                 input_packs.append([
                     input_file, output_crs, None,
                     None,
-                    None, None, TEMP_DIR.name, False
+                    None, None, TEMP_DIR.name, False, output_nodata
                 ])
         else:
             for input_file in warped_3857_extracts:
                 input_packs.append([
                     input_file, output_crs, CRS.from_string(output_crs).area_of_use.bounds,
                     'EPSG:4326',
-                    None, None, TEMP_DIR.name, False
+                    None, None, TEMP_DIR.name, False, output_nodata
                 ])
 
     with multiprocessing.Pool(threads) as warp_pool:
@@ -346,7 +352,7 @@ def grib_tiler(input_files,
                 nodata_mask = None
                 if len(bands_list) > 4 and is_multiband:
                     image_format = 'GTIFF'
-                if len(bands_list) == 2 and is_multiband:
+                if len(bands_list) < 3 and is_multiband and image_format != 'PNG':
                     nodata_mask = np.zeros((tilesize, tilesize), dtype='uint8')
                 render_tile_tasks.append(
                     RenderTileTask(
@@ -356,10 +362,12 @@ def grib_tiler(input_files,
                         x=tile.x,
                         y=tile.y,
                         tms=tms,
+                        nodata=output_nodata,
                         tilesize=tilesize,
                         image_format=image_format,
                         nodata_mask_array=nodata_mask,
-                        bands=bands_list
+                        bands=bands_list,
+                        transparency_percent=transparency_percent
                     )
                 )
         tiling_progress = 0

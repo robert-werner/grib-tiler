@@ -5,6 +5,15 @@ from click import option, argument, Path, Choice
 
 from grib_tiler.utils.click_handlers import cpu_count_handler, crs_handler, zoom_handler, band_handler
 
+transparency_opt = option(
+    '--transparency',
+    'transparency_percent',
+    nargs=1,
+    default=0,
+    type=click.IntRange(0, 100),
+    help='Прозрачность тайлов (в процентах).'
+)
+
 equator_opt = option(
     '--equator',
     'get_equator',
@@ -87,7 +96,9 @@ threads_opt = option('--threads',
 nodata_opt = option(
     '--nodata',
     'output_nodata',
-    default=0,
+    default=None,
+    nargs=1,
+    type=float,
     help='Значение "нет данных".',
 )
 

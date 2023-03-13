@@ -87,7 +87,8 @@ def in_range_calculator(inrange_task: InRangeTask):
 
 def render_tile(render_tile_task: RenderTileTask):
     with Reader(input=render_tile_task.input_filename,
-                tms=render_tile_task.tms) as input_file_rio:
+                tms=render_tile_task.tms,
+                options={'nodata': render_tile_task.nodata}) as input_file_rio:
         try:
             tile = input_file_rio.tile(tile_z=render_tile_task.z,
                                        tile_y=render_tile_task.y,
@@ -103,6 +104,10 @@ def render_tile(render_tile_task: RenderTileTask):
                     tile_mask = numpy.reshape(numpy.expand_dims(tile.mask, axis=-1), (1, render_tile_task.tilesize,
                                                                                       render_tile_task.tilesize))
                     tile.data = np.concatenate((tile.data, tile_mask), axis=0)
+            if render_tile_task.image_format == 'PNG':
+                if tile.data.shape[0] == 1:
+                    render_tile_task.transparency_percent = abs(render_tile_task.transparency_percent - 100)
+                    tile.mask = (render_tile_task.transparency_percent / 100) * tile.mask
             tile_bytes = tile.render(img_format=render_tile_task.image_format)
             del tile
         except TileOutsideBounds:
@@ -219,6 +224,7 @@ def warp_band(args):
     cutline_layer = args[5]
     output_directory = args[6]
     crop_to_cutline = args[7]
+    dest_nodata = args[8]
     warp_task = WarpTask(input_filename=input_filename,
                          output_directory=output_directory,
                          output_crs=output_crs,
@@ -227,7 +233,8 @@ def warp_band(args):
                          cutline_filename=cutline_filename,
                          cutline_layer_name=cutline_layer,
                          output_format='VRT',
-                         crop_to_cutline=crop_to_cutline
+                         crop_to_cutline=crop_to_cutline,
+                         destination_nodata=dest_nodata
                          )
     return warp_raster(warp_task)
 
