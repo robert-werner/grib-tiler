@@ -1,3 +1,4 @@
+import glob
 import json
 import multiprocessing
 import os
@@ -382,6 +383,9 @@ def grib_tiler(input_files,
         echo(json.dumps({"level": "info", "time": get_rfc3339nano_time(),
               "msg": f"Тайлирование изображений... OK"}, ensure_ascii=False))
         TEMP_DIR.cleanup()
+        for input_file_dir in input_files:
+            for vrtpath in glob.iglob(os.path.join(os.path.dirname(input_file_dir), '*.vrt')):
+                os.remove(vrtpath)
 
 
 if __name__ == '__main__':
