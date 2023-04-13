@@ -11,3 +11,4 @@ pyrfc3339
 fiona
 shapely
 geopandas
+Pillow

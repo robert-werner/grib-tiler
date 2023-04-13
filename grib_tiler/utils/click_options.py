@@ -69,7 +69,7 @@ image_format_opt = option(
     'image_format',
     default='JPEG',
     type=Choice([
-        'PNG', 'JPEG', 'GTIFF'
+        'PNG', 'JPEG'
     ]),
     help='Выходной формат тайлов.')
 

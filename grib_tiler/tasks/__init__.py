@@ -52,7 +52,7 @@ class RenderTileTask(Task):
 
     def __init__(self, input_filename, output_directory, z, x, y, tms, nodata=None, tilesize=256, dtype='uint8',
                  image_format='PNG', subdirectory_name=None, nodata_mask_array=None, bands=None,
-                 transparency_percent=None):
+                 transparency_percent=None, original_range_filename=None):
         super().__init__(input_filename=input_filename, output_directory=output_directory)
         self.z = z
         self.x = x
@@ -72,6 +72,7 @@ class RenderTileTask(Task):
                                             f'{self.y}{self.get_raster_extension(self.image_format)}')
         self._nodata_mask = nodata_mask_array
         self.transparency_percent = transparency_percent
+        self.original_range_filename = original_range_filename
 
 
     @staticmethod
@@ -79,8 +80,6 @@ class RenderTileTask(Task):
         img_to_ext = {
             'PNG': '.png',
             'JPEG': '.jpg',
-            'GTIFF': '.tiff',
-            'GTiff': '.tiff',
             'VRT': '.vrt'
         }
         return img_to_ext[tile_img_format]

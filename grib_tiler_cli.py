@@ -36,6 +36,7 @@ META_INFO = {
     "common": []
 }
 
+input_files_list = None
 
 @command(short_help='Генератор растровых тайлов из GRIB(2)-файлов.')
 @click_options.input_files_arg
@@ -70,7 +71,12 @@ def grib_tiler(input_files,
                get_equator,
                transparency_percent,
                output_nodata):
+    global input_files_list
+    input_files_list = input_files
+
     tms = load_tms(output_crs, tilesize)
+
+
 
     input_pack = None
     bands_list = list(map(int, bands_list.split(',')))
@@ -299,6 +305,13 @@ def grib_tiler(input_files,
             warped_extracts.append(result)
         echo(json.dumps({"level": "info", "time": get_rfc3339nano_time(),
               "msg": f"Перепроецирование извлечённых каналов из входных файлов... ОК"}, ensure_ascii=False))
+    tiling_source_files_original_range = []
+    if is_multiband:
+        concatenate_args = [warped_extracts, TEMP_DIR.name]
+        tiling_source_file_vrt = concatenate_bands(concatenate_args)
+        tiling_source_files_original_range.append(tiling_source_file_vrt)
+    else:
+        tiling_source_files_original_range.extend(warped_extracts)
     with multiprocessing.Pool(threads) as byte_conv_pool:
         byte_conv_progress = 0
         echo(json.dumps({"level": "info", "time": get_rfc3339nano_time(),
@@ -345,14 +358,12 @@ def grib_tiler(input_files,
               "msg": f"Генерация задач на тайлирование изображений..."}, ensure_ascii=False))  # TODO: сделать всё это в _ленивом_ итерировании (tiles)
         tiling_task_generation_progress = 0
         for tile in tiles:
-            for band, band_output_directory, tiling_source_file in zip(bands_list, output_directories,
-                                                                       tiling_source_files):
+            for band, band_output_directory, tiling_source_file, tiling_source_file_original_range in zip(bands_list, output_directories,
+                                                                       tiling_source_files, tiling_source_files_original_range):
                 tiling_task_generation_progress += render_tiles_progress_step
                 echo(json.dumps({"level": "info", "time": get_rfc3339nano_time(),
                       "msg": f"Генерация задач на тайлирование изображений... {int(tiling_task_generation_progress)}%"}, ensure_ascii=False))
                 nodata_mask = None
-                if len(bands_list) > 4 and is_multiband:
-                    image_format = 'GTIFF'
                 if len(bands_list) < 3 and is_multiband and image_format != 'PNG':
                     nodata_mask = np.zeros((tilesize, tilesize), dtype='uint8')
                 render_tile_tasks.append(
@@ -368,7 +379,8 @@ def grib_tiler(input_files,
                         image_format=image_format,
                         nodata_mask_array=nodata_mask,
                         bands=bands_list,
-                        transparency_percent=transparency_percent
+                        transparency_percent=transparency_percent,
+                        original_range_filename=tiling_source_file_original_range
                     )
                 )
         tiling_progress = 0
@@ -394,4 +406,7 @@ if __name__ == '__main__':
     except Exception as e:
         echo(json.dumps({"level": "fatal", "time": get_rfc3339nano_time(), "msg": traceback.format_exc()}, ensure_ascii=False))
         TEMP_DIR.cleanup()
+        for input_file_dir in input_files_list:
+            for vrtpath in glob.iglob(os.path.join(os.path.dirname(input_file_dir), '*.vrt')):
+                os.remove(vrtpath)
         sys.exit()

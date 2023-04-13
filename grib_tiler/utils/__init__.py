@@ -51,7 +51,6 @@ def seek_by_meta_value(input_fn, **meta_term):
 
 def get_driver_extension(driver):
     driver_to_extension = {
-        'GTiff': '.tiff',
         'GRIB': '.grib2',
         'VRT': '.vrt'
     }

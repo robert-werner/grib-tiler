@@ -1,13 +1,19 @@
+import io
+import json
 import multiprocessing
 import os
 import random
 import threading
+from pprint import pprint
+
 import geopandas as gpd
 
 import fiona
 import numpy
 import numpy as np
 import rasterio
+from PIL import Image
+from click import echo
 from pyproj import CRS
 from rasterio.apps.contour import build_contour
 from rasterio.apps.translate import translate
@@ -86,6 +92,24 @@ def in_range_calculator(inrange_task: InRangeTask):
 
 
 def render_tile(render_tile_task: RenderTileTask):
+    with Reader(input=render_tile_task.original_range_filename,
+                tms=render_tile_task.tms,
+                options={'nodata': render_tile_task.nodata}) as input_file_rio:
+        min_max_values = {}
+        expected_band_count = len(input_file_rio.dataset.indexes)
+        try:
+            tile = input_file_rio.tile(tile_z=render_tile_task.z,
+                                       tile_y=render_tile_task.y,
+                                       tile_x=render_tile_task.x,
+                                       tilesize=render_tile_task.tilesize,
+                                       resampling_method='bilinear')
+            for band, color in zip(tile.data, ['r', 'g', 'b', 'a'][0:expected_band_count]):
+                min_max_values[f'{color}min'] = band.min()
+                min_max_values[f'{color}step'] = (band.max() - band.min()) / 255
+        except TileOutsideBounds:
+            for color in (['r', 'g', 'b', 'a'][0:expected_band_count]):
+                min_max_values[f'{color}min'] = 0.0
+                min_max_values[f'{color}step'] = 0.0
     with Reader(input=render_tile_task.input_filename,
                 tms=render_tile_task.tms,
                 options={'nodata': render_tile_task.nodata}) as input_file_rio:
@@ -97,8 +121,6 @@ def render_tile(render_tile_task: RenderTileTask):
                                        resampling_method='bilinear')
             if isinstance(render_tile_task.nodata_mask, np.ndarray):
                 tile.mask = render_tile_task.nodata_mask
-            if tile.data.shape[0] > 4:
-                render_tile_task.image_format = 'GTIFF'
             if render_tile_task.image_format == 'JPEG':
                 if tile.data.shape[0] == 2:
                     tile_mask = numpy.reshape(numpy.expand_dims(tile.mask, axis=-1), (1, render_tile_task.tilesize,
@@ -127,8 +149,10 @@ def render_tile(render_tile_task: RenderTileTask):
                     shape=(
                         len(input_file_rio.dataset.indexes), render_tile_task.tilesize, render_tile_task.tilesize),
                     dtype='uint8'), img_format=render_tile_task.image_format)
-    with open(render_tile_task.output_filename, 'wb') as tile_file:
-        tile_file.write(tile_bytes)
+    pillow_image = Image.open(io.BytesIO(tile_bytes))
+    exif = pillow_image.getexif()
+    exif[0x9286] = json.dumps(min_max_values, ensure_ascii=False)
+    pillow_image.save(render_tile_task.output_filename, exif=exif)
 
 
 def isolines_from_band(isolines_task: IsolinesTask):
