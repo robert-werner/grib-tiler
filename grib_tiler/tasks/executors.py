@@ -110,7 +110,7 @@ def render_tile(render_tile_task: RenderTileTask):
             for color in (['r', 'g', 'b', 'a'][0:expected_band_count]):
                 min_max_values[f'{color}min'] = 0.0
                 min_max_values[f'{color}step'] = 0.0
-    with Reader(input=render_tile_task.input_filename,
+    with Reader(input=render_tile_task.original_range_filename,
                 tms=render_tile_task.tms,
                 options={'nodata': render_tile_task.nodata}) as input_file_rio:
         try:
@@ -119,6 +119,13 @@ def render_tile(render_tile_task: RenderTileTask):
                                        tile_x=render_tile_task.x,
                                        tilesize=render_tile_task.tilesize,
                                        resampling_method='bilinear')
+            bands_mm = []
+            for band in tile.data[0:expected_band_count]:
+                bands_mm.append(
+                    (band.min(),
+                     band.max())
+                )
+            tile = tile.post_process(in_range=bands_mm, out_dtype='uint8')
             if isinstance(render_tile_task.nodata_mask, np.ndarray):
                 tile.mask = render_tile_task.nodata_mask
             if render_tile_task.image_format == 'JPEG':
