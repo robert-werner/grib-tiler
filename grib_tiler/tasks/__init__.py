@@ -52,7 +52,7 @@ class RenderTileTask(Task):
 
     def __init__(self, input_filename, output_directory, z, x, y, tms, nodata=None, tilesize=256, dtype='uint8',
                  image_format='PNG', subdirectory_name=None, nodata_mask_array=None, bands=None,
-                 transparency_percent=None, original_range_filename=None):
+                 transparency_percent=None, original_range_filename=None, include_exif=None):
         super().__init__(input_filename=input_filename, output_directory=output_directory)
         self.z = z
         self.x = x
@@ -73,6 +73,7 @@ class RenderTileTask(Task):
         self._nodata_mask = nodata_mask_array
         self.transparency_percent = transparency_percent
         self.original_range_filename = original_range_filename
+        self.include_exif = include_exif
 
 
     @staticmethod

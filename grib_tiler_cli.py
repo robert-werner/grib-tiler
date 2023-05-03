@@ -55,6 +55,7 @@ input_files_list = None
 @click_options.equator_opt
 @click_options.transparency_opt
 @click_options.nodata_opt
+@click_options.exif_opt
 def grib_tiler(input_files,
                output_directory,
                cutline_filename,
@@ -70,7 +71,8 @@ def grib_tiler(input_files,
                isolines_simplify_epsilon,
                get_equator,
                transparency_percent,
-               output_nodata):
+               output_nodata,
+               include_exif):
     global input_files_list
     input_files_list = input_files
 
@@ -380,7 +382,8 @@ def grib_tiler(input_files,
                         nodata_mask_array=nodata_mask,
                         bands=bands_list,
                         transparency_percent=transparency_percent,
-                        original_range_filename=tiling_source_file_original_range
+                        original_range_filename=tiling_source_file_original_range,
+                        include_exif=include_exif
                     )
                 )
         tiling_progress = 0

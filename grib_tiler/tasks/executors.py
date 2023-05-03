@@ -92,40 +92,41 @@ def in_range_calculator(inrange_task: InRangeTask):
 
 
 def render_tile(render_tile_task: RenderTileTask):
-    with Reader(input=render_tile_task.original_range_filename,
+    exif = None
+    min_max_values = {}
+    if render_tile_task.include_exif:
+        with Reader(input=render_tile_task.original_range_filename,
+                    tms=render_tile_task.tms,
+                    options={'nodata': render_tile_task.nodata}) as input_file_rio:
+            expected_band_count = len(input_file_rio.dataset.indexes)
+            try:
+                tile = input_file_rio.tile(tile_z=render_tile_task.z,
+                                           tile_y=render_tile_task.y,
+                                           tile_x=render_tile_task.x,
+                                           tilesize=render_tile_task.tilesize,
+                                           resampling_method='bilinear')
+                for band, color in zip(tile.data, ['r', 'g', 'b', 'a'][0:expected_band_count]):
+                    min_max_values[f'{color}min'] = band.min()
+                    min_max_values[f'{color}step'] = (band.max() - band.min()) / 255
+                bands_mm = []
+                for band in tile.data[0:expected_band_count]:
+                    bands_mm.append(
+                        (band.min(),
+                         band.max())
+                    )
+            except TileOutsideBounds:
+                for color in (['r', 'g', 'b', 'a'][0:expected_band_count]):
+                    min_max_values[f'{color}min'] = 0.0
+                    min_max_values[f'{color}step'] = 0.0
+    with Reader(input=render_tile_task.input_filename,
                 tms=render_tile_task.tms,
                 options={'nodata': render_tile_task.nodata}) as input_file_rio:
-        min_max_values = {}
-        expected_band_count = len(input_file_rio.dataset.indexes)
         try:
             tile = input_file_rio.tile(tile_z=render_tile_task.z,
                                        tile_y=render_tile_task.y,
                                        tile_x=render_tile_task.x,
                                        tilesize=render_tile_task.tilesize,
                                        resampling_method='bilinear')
-            for band, color in zip(tile.data, ['r', 'g', 'b', 'a'][0:expected_band_count]):
-                min_max_values[f'{color}min'] = band.min()
-                min_max_values[f'{color}step'] = (band.max() - band.min()) / 255
-        except TileOutsideBounds:
-            for color in (['r', 'g', 'b', 'a'][0:expected_band_count]):
-                min_max_values[f'{color}min'] = 0.0
-                min_max_values[f'{color}step'] = 0.0
-    with Reader(input=render_tile_task.original_range_filename,
-                tms=render_tile_task.tms,
-                options={'nodata': render_tile_task.nodata}) as input_file_rio:
-        try:
-            tile = input_file_rio.tile(tile_z=render_tile_task.z,
-                                       tile_y=render_tile_task.y,
-                                       tile_x=render_tile_task.x,
-                                       tilesize=render_tile_task.tilesize,
-                                       resampling_method='bilinear')
-            bands_mm = []
-            for band in tile.data[0:expected_band_count]:
-                bands_mm.append(
-                    (band.min(),
-                     band.max())
-                )
-            tile = tile.post_process(in_range=bands_mm, out_dtype='uint8')
             if isinstance(render_tile_task.nodata_mask, np.ndarray):
                 tile.mask = render_tile_task.nodata_mask
             if render_tile_task.image_format == 'JPEG':
@@ -157,8 +158,9 @@ def render_tile(render_tile_task: RenderTileTask):
                         len(input_file_rio.dataset.indexes), render_tile_task.tilesize, render_tile_task.tilesize),
                     dtype='uint8'), img_format=render_tile_task.image_format)
     pillow_image = Image.open(io.BytesIO(tile_bytes))
-    exif = pillow_image.getexif()
-    exif[0x9286] = json.dumps(min_max_values, ensure_ascii=False)
+    if render_tile_task.include_exif:
+        exif = pillow_image.getexif()
+        exif[0x9286] = json.dumps(min_max_values, ensure_ascii=False)
     pillow_image.save(render_tile_task.output_filename, exif=exif)
 
 

@@ -63,6 +63,14 @@ file_out_arg = argument(
     required=True,
     type=Path(resolve_path=True, file_okay=False))
 
+exif_opt = option(
+    '--exif',
+    'include_exif',
+    is_flag=True,
+    default=False,
+    help='Включение метаданных (мин/макс) к каждому тайлу'
+)
+
 image_format_opt = option(
     '--f',
     '--format',
