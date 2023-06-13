@@ -3,5 +3,12 @@ numpy
 mercantile
 morecantile
 tqdm
-git+http://dev.modext.ru:8929/dcc5/rasterio.git@meteoctx
-rio-tiler
+rasterio==1.4.0
+rio-tiler==4.1.9
+parallelbar
+pytz
+pyrfc3339
+fiona
+shapely
+geopandas
+Pillow
