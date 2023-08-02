@@ -12,3 +12,4 @@ fiona
 shapely
 geopandas
 Pillow
+pydantic==1.10.11
